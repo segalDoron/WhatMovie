@@ -44,7 +44,7 @@ async function askGemini(input: string): Promise<{ title: string; year?: number 
     headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" },
     body: JSON.stringify({
       systemInstruction: {
-        parts: [{ text: 'Reply only with a JSON array of 8 real movies: [{"title": string, "year": number}].' }],
+        parts: [{ text: 'Reply only with a JSON array of 12 real movies: [{"title": string, "year": number}].' }],
       },
       contents: [{ role: "user", parts: [{ text: `what movie should I watch based on: ${input}` }] }],
       generationConfig: { responseMimeType: "application/json" },
@@ -80,7 +80,7 @@ async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, 
     const s = await tmdb<{ results: TmdbMovie[] }>("/search/movie", { query: loved });
     if (s.results[0]) {
       const r = await tmdb<{ results: TmdbMovie[] }>(`/movie/${s.results[0].id}/recommendations`);
-      if (r.results.length) return r.results.slice(0, 10).map((m) => toMovie(m, g));
+      if (r.results.length) return r.results.slice(0, 20).map((m) => toMovie(m, g));
     }
   }
 
@@ -109,8 +109,15 @@ async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, 
   const no = ((a.avoid as string[]) ?? []).map((k) => AVOID[k]).filter(Boolean);
   if (no.length) p.without_genres = no.join(",");
 
-  const r = await tmdb<{ results: TmdbMovie[] }>("/discover/movie", p);
-  return r.results.slice(0, 10).map((m) => toMovie(m, g));
+  let r = await tmdb<{ results: TmdbMovie[] }>("/discover/movie", p);
+  if (r.results.length < 10) {
+    // Too strict: relax the quality filters and go back to the first page.
+    p.page = 1;
+    p["vote_count.gte"] = 100;
+    delete p["vote_average.gte"];
+    r = await tmdb<{ results: TmdbMovie[] }>("/discover/movie", p);
+  }
+  return r.results.slice(0, 20).map((m) => toMovie(m, g));
 }
 
 export async function POST(request: Request) {
