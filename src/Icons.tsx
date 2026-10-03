@@ -8,3 +8,20 @@ export const Star = () => (
     <path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />
   </svg>
 );
+
+const base = { width: 22, height: 22, viewBox: "0 0 24 24", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+export const ThumbUp = ({ filled }: { filled: boolean }) => (
+  <svg {...base} fill={filled ? "currentColor" : "none"} stroke="currentColor">
+    <path d="M7 10v11H3V10h4Zm0 0 4-8a2.5 2.5 0 0 1 2.5 2.7L13 9h6.3a2 2 0 0 1 2 2.4l-1.4 7a2 2 0 0 1-2 1.6H7" />
+  </svg>
+);
+export const ThumbDown = ({ filled }: { filled: boolean }) => (
+  <svg {...base} fill={filled ? "currentColor" : "none"} stroke="currentColor">
+    <path d="M17 14V3h4v11h-4Zm0 0-4 8a2.5 2.5 0 0 1-2.5-2.7L11 15H4.7a2 2 0 0 1-2-2.4l1.4-7A2 2 0 0 1 6.1 4H17" />
+  </svg>
+);
+export const Heart = ({ filled }: { filled: boolean }) => (
+  <svg {...base} fill={filled ? "currentColor" : "none"} stroke="currentColor">
+    <path d="M12 21s-8-4.9-9.3-10A5.2 5.2 0 0 1 12 6.6 5.2 5.2 0 0 1 21.3 11C20 16.1 12 21 12 21Z" />
+  </svg>
+);

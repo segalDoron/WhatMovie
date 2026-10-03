@@ -123,6 +123,12 @@ async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    if (body.mode === "cast") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id)) throw new Error("Invalid movie id");
+      const c = await tmdb<{ cast: { name: string; character: string }[] }>(`/movie/${id}/credits`);
+      return Response.json({ cast: c.cast.slice(0, 10).map(({ name, character }) => ({ name, character })) });
+    }
     const g = await genreMap();
     const movies =
       body.mode === "text"
