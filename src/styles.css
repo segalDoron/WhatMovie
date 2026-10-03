@@ -58,7 +58,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .q:disabled .chip { cursor: not-allowed; }
 .link { align-self: flex-start; background: none; border: 0; padding: 4px 0; color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .link:disabled { opacity: .4; cursor: not-allowed; }
-.more { display: flex; flex-direction: column; gap: 20px; }
+.more-wrap {
+  display: grid; grid-template-rows: 0fr; visibility: hidden; opacity: 0;
+  transition: grid-template-rows .35s cubic-bezier(.2, .8, .2, 1), opacity .3s, visibility 0s .35s;
+}
+.more-wrap.open { grid-template-rows: 1fr; visibility: visible; opacity: 1; transition-delay: 0s; }
+.more-inner { overflow: hidden; min-height: 0; }
+.more { display: flex; flex-direction: column; gap: 20px; padding: 4px 2px 8px; }
 .text, .free-input input {
   width: 100%; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line);
   background: var(--surface); color: var(--ink); font: inherit;
