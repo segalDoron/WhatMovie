@@ -78,21 +78,23 @@ export default function QuestionForm({ onSubmit }: Props) {
         {showMore ? "Fewer options" : "More options"}
       </button>
 
-      {showMore && (
-        <div className="more">
-          {MORE.map(renderQ)}
-          <fieldset className="q" disabled={freeText}>
-            <legend>A movie you loved recently</legend>
-            <input
-              className="text"
-              type="text"
-              value={(answers.loved as string) ?? ""}
-              onChange={(e) => setAnswers((a) => ({ ...a, loved: e.target.value }))}
-              placeholder="We'll find similar ones"
-            />
-          </fieldset>
+      <div className={`more-wrap ${showMore && !freeText ? "open" : ""}`}>
+        <div className="more-inner">
+          <div className="more">
+            {MORE.map(renderQ)}
+            <fieldset className="q" disabled={freeText}>
+              <legend>A movie you loved recently</legend>
+              <input
+                className="text"
+                type="text"
+                value={(answers.loved as string) ?? ""}
+                onChange={(e) => setAnswers((a) => ({ ...a, loved: e.target.value }))}
+                placeholder="We'll find similar ones"
+              />
+            </fieldset>
+          </div>
         </div>
-      )}
+      </div>
 
       <button className="primary" type="submit" disabled={!canSubmit}>
         Find my movie
