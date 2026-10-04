@@ -36,93 +36,6 @@ const toMovie = (m: TmdbMovie, g: Map<number, string>): Movie => ({
   overview: m.overview,
 });
 
-/* ---------- Free text: Gemini suggests titles, TMDB supplies the data ---------- */
-const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
-let cachedModel: string | undefined;
-
-const geminiKey = () => process.env.GEMINI_API_KEY ?? "";
-
-async function callGemini(model: string, input: string): Promise<Response> {
-  return fetch(`${GEMINI}/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey() },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: 'Reply only with a JSON array of 12 real movies: [{"title": string, "year": number}].' }],
-      },
-      contents: [{ role: "user", parts: [{ text: `what movie should I watch based on: ${input}` }] }],
-      generationConfig: { responseMimeType: "application/json" },
-    }),
-  });
-}
-
-async function errMessage(res: Response): Promise<string> {
-  try {
-    return (await res.json())?.error?.message ?? res.statusText;
-  } catch {
-    return res.statusText;
-  }
-}
-
-// Model names get retired often, so ask the API which text models this key can use.
-async function listTextModels(): Promise<string[]> {
-  const res = await fetch(`${GEMINI}/models?pageSize=200`, { headers: { "x-goog-api-key": geminiKey() } });
-  if (!res.ok) return [];
-  const data = await res.json();
-  const skip = /image|tts|live|audio|embed|imagen|veo|lyria|robotics|computer|learnlm|gemma|deep-research|native|exp/i;
-  const version = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
-  return ((data.models ?? []) as { name: string; supportedGenerationMethods?: string[] }[])
-    .filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash/i.test(m.name) && !skip.test(m.name))
-    .map((m) => m.name.replace(/^models\//, ""))
-    .sort((a, b) => Number(/preview/.test(a)) - Number(/preview/.test(b)) || version(b) - version(a));
-}
-
-async function askGemini(input: string): Promise<{ title: string; year?: number }[]> {
-  const queue = [process.env.GEMINI_MODEL, cachedModel].filter(Boolean) as string[];
-  const tried: string[] = [];
-  let listed = false;
-  let lastError = "";
-
-  while (tried.length < 5) {
-    if (!queue.length) {
-      if (listed) break;
-      listed = true;
-      queue.push(...(await listTextModels()));
-      if (!queue.length) break;
-    }
-    const model = queue.shift()!;
-    if (tried.includes(model)) continue;
-    tried.push(model);
-
-    const res = await callGemini(model, input);
-    if (res.ok) {
-      cachedModel = model;
-      const data = await res.json();
-      try {
-        return JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]");
-      } catch {
-        return [];
-      }
-    }
-    if (model === cachedModel) cachedModel = undefined;
-    lastError = `Gemini ${res.status} (${model}): ${await errMessage(res)}`;
-    if (![404, 403, 429].includes(res.status)) break; // only try another model for these
-  }
-  throw new Error(lastError || "Gemini: no usable model found for this API key");
-}
-
-async function fromText(input: string, g: Map<number, string>): Promise<Movie[]> {
-  const picks = await askGemini(input);
-  const found = await Promise.all(
-    picks.map(async ({ title, year }) => {
-      let r = await tmdb<{ results: TmdbMovie[] }>("/search/movie", { query: title, ...(year ? { year } : {}) });
-      if (!r.results.length && year) r = await tmdb("/search/movie", { query: title });
-      return r.results[0];
-    })
-  );
-  return found.filter(Boolean).map((m) => toMovie(m, g));
-}
-
 /* ---------- Questions: map answers to TMDB filters ---------- */
 type Answers = Record<string, string | string[]>;
 
@@ -281,10 +194,7 @@ export async function POST(request: Request) {
       return Response.json({ movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name) } });
     }
     const g = await genreMap();
-    const movies =
-      body.mode === "text"
-        ? await fromText(String(body.input ?? "").slice(0, 80), g)
-        : await fromAnswers(body.answers ?? {}, g);
+    const movies = await fromAnswers(body.answers ?? {}, g);
     return Response.json({ movies });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });
