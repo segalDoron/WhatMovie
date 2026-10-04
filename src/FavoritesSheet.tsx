@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { Favorite } from "./favorites";
 import MovieRow from "./MovieRow";
 import { Close } from "./Icons";
@@ -23,7 +24,8 @@ export default function FavoritesSheet({ open, items, loading, error, onClose, o
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  return (
+  // Portal + fixed positioning: the sheet floats above the page without touching its layout.
+  return createPortal(
     <>
       <div className={`backdrop ${open ? "show" : ""}`} onClick={onClose} aria-hidden="true" />
       <section className={`sheet ${open ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="Favorites" aria-hidden={!open}>
@@ -54,6 +56,7 @@ export default function FavoritesSheet({ open, items, loading, error, onClose, o
           </div>
         )}
       </section>
-    </>
+    </>,
+    document.body
   );
 }
