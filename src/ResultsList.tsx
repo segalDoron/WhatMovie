@@ -1,5 +1,6 @@
 import type { Movie } from "./types";
-import { Chevron, Star } from "./Icons";
+import { Chevron } from "./Icons";
+import MovieRow from "./MovieRow";
 
 interface Props {
   movies: Movie[];
@@ -22,17 +23,7 @@ export default function ResultsList({ movies, onOpen, onStartOver, tabbable }: P
       ) : (
         <ul className="list">
           {movies.map((m) => (
-            <li key={m.id}>
-              <button className="item" onClick={() => onOpen(m)} tabIndex={t}>
-                {m.poster ? <img src={m.poster} alt="" loading="lazy" /> : <div className="noimg" />}
-                <div className="meta">
-                  <h2>{m.title}</h2>
-                  <p className="genre">{m.genres.slice(0, 3).join(", ")}</p>
-                  <p className="year">{m.year}</p>
-                  <p className="score"><Star /> {m.score.toFixed(1)}</p>
-                </div>
-              </button>
-            </li>
+            <MovieRow key={m.id} movie={m} onOpen={() => onOpen(m)} tabIndex={t} />
           ))}
         </ul>
       )}

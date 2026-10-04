@@ -12,7 +12,7 @@ export const CORE: Question[] = [
   { key: "tone", label: "What tone?", options: [["dark", "Dark"], ["serious", "Serious"], ["balanced", "Balanced"], ["light", "Light"], ["funny", "Humorous"]] },
   { key: "time", label: "How much time do you have?", options: [["short", "Under 90 min"], ["medium", "About 2 hours"], ["any", "I don't care"]] },
   { key: "novelty", label: "New or familiar?", options: [["new", "Something new"], ["familiar", "Comfort rewatch"]] },
-  { key: "platform", label: "Where can you watch?", options: [["any", "Anywhere"], ["8", "Netflix"], ["9", "Prime Video"], ["337", "Disney+"], ["1899", "Max"], ["350", "Apple TV+"]] },
+  { key: "platform", label: "Where can you watch? (pick any)", multi: true, options: [["8", "Netflix"], ["9", "Prime Video"], ["337", "Disney+"], ["1899", "Max"], ["350", "Apple TV+"]] },
 ];
 
 export const MORE: Question[] = [

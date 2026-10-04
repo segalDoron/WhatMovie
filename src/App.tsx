@@ -3,11 +3,17 @@ import QuestionForm from "./QuestionForm";
 import Loading from "./Loading";
 import ResultsList from "./ResultsList";
 import MovieDetail from "./MovieDetail";
-import { fetchMovies } from "./api";
+import FavoritesSheet from "./FavoritesSheet";
+import { useFavorites } from "./useFavorites";
+import { fetchMovies, fetchMovie } from "./api";
+import type { Favorite } from "./favorites";
 import type { Movie, View } from "./types";
 
 type Theme = "light" | "dark";
-type NavState = { view: "form" | "loading" | "results" | "error" | "detail"; id?: number };
+type NavState = { view: "form" | "loading" | "results" | "error" | "detail" | "favorites"; id?: number };
+
+// `inert` removes a hidden layer from tab order and screen readers.
+const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
 
 function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -23,20 +29,27 @@ function useTheme(): [Theme, () => void] {
 
 /*
  * History stack: form -> (loading, replaced by) results -> detail
- * UI back buttons call history.back(), so the native back button and the
- * UI always walk the same stack. popstate is the single place that updates the view.
+ *                form -> favorites (sheet) -> detail
+ * UI back/close buttons call history.back(), so the native back button and the UI
+ * always walk the same stack. popstate is the single place that updates the view.
  */
 export default function App() {
   const [theme, toggleTheme] = useTheme();
+  const favorites = useFavorites();
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
+  const [favError, setFavError] = useState("");
   const [error, setError] = useState("");
 
   const moviesRef = useRef<Movie[]>([]);
   moviesRef.current = movies;
-  const requestId = useRef(0); // lets us ignore a search that was navigated away from
+  const movieCache = useRef(new Map<number, Movie>()); // every movie opened this session (for back/forward)
+  const requestId = useRef(0); // ignore a search that was navigated away from
+  const favRequest = useRef(0); // ignore a favorite fetch that was cancelled
 
   useEffect(() => {
     // The page always starts at the search form, even after a refresh.
@@ -45,33 +58,29 @@ export default function App() {
     history.replaceState({ view: "form" } satisfies NavState, "");
 
     const onPopState = (e: PopStateEvent) => {
-      requestId.current++; // cancel any in-flight search
+      requestId.current++;
+      favRequest.current++;
+      setFavLoading(false);
+      setFavError("");
       const s = e.state as NavState | null;
-      const list = moviesRef.current;
 
       if (s?.view === "detail") {
-        const m = list.find((x) => x.id === s.id);
+        const m = movieCache.current.get(s.id ?? -1);
         if (m) {
           setSelected(m);
-          setDetailOpen(true);
-          setView("results");
+          setDetailOpen(true); // sheet / list stay as they were underneath
           return;
         }
       }
-      if (s?.view === "results" && list.length) {
-        setDetailOpen(false);
-        setView("results");
-        return;
-      }
-      if (s?.view === "error") {
-        setDetailOpen(false);
-        setView("error");
-        return;
-      }
-      // form, a cancelled loading entry, or anything unknown
       setDetailOpen(false);
-      setSelected(null);
-      setView("form");
+      if (s?.view === "favorites") {
+        setSheetOpen(true);
+        return;
+      }
+      setSheetOpen(false);
+      if (s?.view === "results" && moviesRef.current.length) setView("results");
+      else if (s?.view === "error") setView("error");
+      else setView("form");
     };
 
     window.addEventListener("popstate", onPopState);
@@ -102,9 +111,35 @@ export default function App() {
   };
 
   const openDetail = (m: Movie) => {
+    movieCache.current.set(m.id, m);
     history.pushState({ view: "detail", id: m.id } satisfies NavState, "");
     setSelected(m);
     setDetailOpen(true);
+  };
+
+  const openSheet = () => {
+    history.pushState({ view: "favorites" } satisfies NavState, "");
+    setSheetOpen(true);
+  };
+
+  // A favorite only stores the basics, so fetch the full details from TMDB first (with a loader).
+  const openFavorite = async (fav: Favorite) => {
+    const cached = movieCache.current.get(fav.id);
+    if (cached) return openDetail(cached);
+
+    const id = ++favRequest.current;
+    setFavLoading(true);
+    setFavError("");
+    try {
+      const m = await fetchMovie(fav.id);
+      if (id !== favRequest.current) return; // sheet was closed meanwhile
+      setFavLoading(false);
+      openDetail(m);
+    } catch {
+      if (id !== favRequest.current) return;
+      setFavLoading(false);
+      setFavError("Couldn't load this movie. Check your connection and try again.");
+    }
   };
 
   return (
@@ -113,7 +148,11 @@ export default function App() {
         {theme === "dark" ? "☀️" : "🌙"}
       </button>
 
-      {view === "form" && <QuestionForm onSubmit={submit} />}
+      {view === "form" && (
+        <div className="layer" {...inertProps(sheetOpen || detailOpen)}>
+          <QuestionForm onSubmit={submit} onOpenFavorites={openSheet} />
+        </div>
+      )}
       {view === "loading" && <Loading />}
       {view === "error" && (
         <div className="loading">
@@ -127,11 +166,21 @@ export default function App() {
           <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen}>
             <ResultsList movies={movies} tabbable={!detailOpen} onStartOver={goBack} onOpen={openDetail} />
           </section>
-          <section className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen}>
-            <MovieDetail movie={selected} tabbable={detailOpen} onBack={goBack} />
-          </section>
         </div>
       )}
+
+      <FavoritesSheet
+        open={sheetOpen}
+        items={favorites}
+        loading={favLoading}
+        error={favError}
+        onClose={goBack}
+        onPick={openFavorite}
+      />
+
+      <section className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen}>
+        <MovieDetail movie={selected} tabbable={detailOpen} onBack={goBack} />
+      </section>
     </div>
   );
 }

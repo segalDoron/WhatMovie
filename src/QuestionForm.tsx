@@ -3,15 +3,19 @@ import { CORE, MORE, type Question } from "./options";
 import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
 import YearRange, { MIN_YEAR, MAX_YEAR } from "./YearRange";
 import ThisOrThat, { type Side } from "./ThisOrThat";
+import { useFavorites } from "./useFavorites";
+import { Heart } from "./Icons";
 import type { Answers } from "./types";
 
 const MAX = 80;
 
 interface Props {
   onSubmit: (p: { mode: "text"; input: string } | { mode: "answers"; answers: Answers }) => void;
+  onOpenFavorites: () => void;
 }
 
-export default function QuestionForm({ onSubmit }: Props) {
+export default function QuestionForm({ onSubmit, onOpenFavorites }: Props) {
+  const favCount = useFavorites().length;
   const [answers, setAnswers] = useState<Answers>({});
   const [years, setYears] = useState<[number, number]>([MIN_YEAR, MAX_YEAR]);
   const [picks, setPicks] = useState<Record<string, Side>>({});
@@ -135,9 +139,19 @@ export default function QuestionForm({ onSubmit }: Props) {
         </div>
       </div>
 
-      <button className="primary" type="submit" disabled={!canSubmit}>
-        Find my movie
-      </button>
+      <div className="dock">
+        <div className="submit-bar">
+          <button className="primary" type="submit" disabled={!canSubmit}>
+            Find my movie
+          </button>
+        </div>
+        <nav className="menu" aria-label="Main menu">
+          <button type="button" className="menu-btn" onClick={onOpenFavorites} aria-label={`Favorites (${favCount})`}>
+            <Heart filled={favCount > 0} />
+            {favCount > 0 && <span className="badge" aria-hidden="true">{favCount}</span>}
+          </button>
+        </nav>
+      </div>
     </form>
   );
 }

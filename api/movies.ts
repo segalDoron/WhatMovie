@@ -37,11 +37,15 @@ const toMovie = (m: TmdbMovie, g: Map<number, string>): Movie => ({
 });
 
 /* ---------- Free text: Gemini suggests titles, TMDB supplies the data ---------- */
-async function askGemini(input: string): Promise<{ title: string; year?: number }[]> {
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
+let cachedModel: string | undefined;
+
+const geminiKey = () => process.env.GEMINI_API_KEY ?? "";
+
+async function callGemini(model: string, input: string): Promise<Response> {
+  return fetch(`${GEMINI}/models/${model}:generateContent`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey() },
     body: JSON.stringify({
       systemInstruction: {
         parts: [{ text: 'Reply only with a JSON array of 12 real movies: [{"title": string, "year": number}].' }],
@@ -50,9 +54,61 @@ async function askGemini(input: string): Promise<{ title: string; year?: number 
       generationConfig: { responseMimeType: "application/json" },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
+}
+
+async function errMessage(res: Response): Promise<string> {
+  try {
+    return (await res.json())?.error?.message ?? res.statusText;
+  } catch {
+    return res.statusText;
+  }
+}
+
+// Model names get retired often, so ask the API which text models this key can use.
+async function listTextModels(): Promise<string[]> {
+  const res = await fetch(`${GEMINI}/models?pageSize=200`, { headers: { "x-goog-api-key": geminiKey() } });
+  if (!res.ok) return [];
   const data = await res.json();
-  return JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]");
+  const skip = /image|tts|live|audio|embed|imagen|veo|lyria|robotics|computer|learnlm|gemma|deep-research|native|exp/i;
+  const version = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+  return ((data.models ?? []) as { name: string; supportedGenerationMethods?: string[] }[])
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash/i.test(m.name) && !skip.test(m.name))
+    .map((m) => m.name.replace(/^models\//, ""))
+    .sort((a, b) => Number(/preview/.test(a)) - Number(/preview/.test(b)) || version(b) - version(a));
+}
+
+async function askGemini(input: string): Promise<{ title: string; year?: number }[]> {
+  const queue = [process.env.GEMINI_MODEL, cachedModel].filter(Boolean) as string[];
+  const tried: string[] = [];
+  let listed = false;
+  let lastError = "";
+
+  while (tried.length < 5) {
+    if (!queue.length) {
+      if (listed) break;
+      listed = true;
+      queue.push(...(await listTextModels()));
+      if (!queue.length) break;
+    }
+    const model = queue.shift()!;
+    if (tried.includes(model)) continue;
+    tried.push(model);
+
+    const res = await callGemini(model, input);
+    if (res.ok) {
+      cachedModel = model;
+      const data = await res.json();
+      try {
+        return JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]");
+      } catch {
+        return [];
+      }
+    }
+    if (model === cachedModel) cachedModel = undefined;
+    lastError = `Gemini ${res.status} (${model}): ${await errMessage(res)}`;
+    if (![404, 403, 429].includes(res.status)) break; // only try another model for these
+  }
+  throw new Error(lastError || "Gemini: no usable model found for this API key");
 }
 
 async function fromText(input: string, g: Map<number, string>): Promise<Movie[]> {
@@ -180,7 +236,9 @@ async function fromAnswers(a: Answers, g: Map<number, string>): Promise<Movie[]>
   if (taste.includes("gem")) { p["vote_count.gte"] = 300; p["vote_count.lte"] = 4000; p["vote_average.gte"] = 7; p.sort_by = "vote_average.desc"; }
   if (taste.includes("classic")) { p["vote_count.gte"] = 8000; p.sort_by = "vote_average.desc"; }
 
-  if (a.platform && a.platform !== "any") p.with_watch_providers = String(a.platform);
+  // Several services are combined with OR; none selected means anywhere.
+  const providers = asList(a.platform).filter((x) => x !== "any");
+  if (providers.length) p.with_watch_providers = providers.join("|");
 
   const { from, to } = yearRange(a);
   if (from) p["primary_release_date.gte"] = `${from}-01-01`;
@@ -215,6 +273,12 @@ export async function POST(request: Request) {
       if (!Number.isInteger(id)) throw new Error("Invalid movie id");
       const c = await tmdb<{ cast: { name: string; character: string }[] }>(`/movie/${id}/credits`);
       return Response.json({ cast: c.cast.slice(0, 10).map(({ name, character }) => ({ name, character })) });
+    }
+    if (body.mode === "movie") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id)) throw new Error("Invalid movie id");
+      const m = await tmdb<TmdbMovie & { genres: { id: number; name: string }[] }>(`/movie/${id}`);
+      return Response.json({ movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name) } });
     }
     const g = await genreMap();
     const movies =

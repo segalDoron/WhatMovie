@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 import type { Movie } from "./types";
 import { Chevron, Star, ThumbUp, ThumbDown, Heart } from "./Icons";
 import { fetchCast, type CastMember } from "./api";
+import { favorites } from "./favorites";
+import { useFavorites } from "./useFavorites";
 
-interface Reaction { like: boolean; dislike: boolean; heart: boolean }
-const NONE: Reaction = { like: false, dislike: false, heart: false };
+interface Reaction { like: boolean; dislike: boolean }
+const NONE: Reaction = { like: false, dislike: false };
 
 export default function MovieDetail({ movie, onBack, tabbable }: { movie: Movie | null; onBack: () => void; tabbable: boolean }) {
   const [cast, setCast] = useState<CastMember[] | null>(null);
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
-  const [reactions, setReactions] = useState<Record<number, Reaction>>({}); // UI only for now
+  const [reactions, setReactions] = useState<Record<number, Reaction>>({}); // like/dislike are UI only for now
+  const favs = useFavorites();
+  const isFav = !!movie && favs.some((f) => f.id === movie.id);
 
   useEffect(() => {
     if (!movie) return;
@@ -38,7 +42,7 @@ export default function MovieDetail({ movie, onBack, tabbable }: { movie: Movie 
   return (
     <>
       <header className="bar">
-        <button className="back" onClick={onBack} aria-label="Back to list" tabIndex={t}>
+        <button className="back" onClick={onBack} aria-label="Back" tabIndex={t}>
           <Chevron />
         </button>
       </header>
@@ -53,8 +57,14 @@ export default function MovieDetail({ movie, onBack, tabbable }: { movie: Movie 
             <button className="react dislike" aria-pressed={r.dislike} aria-label="Dislike" tabIndex={t} onClick={() => toggle("dislike")}>
               <ThumbDown filled={r.dislike} />
             </button>
-            <button className="react heart" aria-pressed={r.heart} aria-label="Love" tabIndex={t} onClick={() => toggle("heart")}>
-              <Heart filled={r.heart} />
+            <button
+              className="react heart"
+              aria-pressed={isFav}
+              aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+              tabIndex={t}
+              onClick={() => favorites.toggle(movie)}
+            >
+              <Heart filled={isFav} />
             </button>
           </div>
 
