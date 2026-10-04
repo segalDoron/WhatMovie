@@ -1,6 +1,7 @@
 import type { Ref } from "react";
 import type { Favorite } from "./favorites";
 import MovieRow from "./MovieRow";
+import { favorites } from "./favorites";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
@@ -29,7 +30,7 @@ export default function FavoritesContent({ items, loading, error, onClose, onPic
         ) : (
           <ul className="list">
             {items.map((f) => (
-              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} />
+              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} onRemove={() => favorites.remove(f.id)} />
             ))}
           </ul>
         )}

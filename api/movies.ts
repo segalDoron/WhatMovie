@@ -8,7 +8,7 @@ interface TmdbMovie {
 }
 interface Movie {
   id: number; title: string; genres: string[]; year: string; score: number;
-  poster: string | null; backdrop: string | null; overview: string;
+  poster: string | null; backdrop: string | null; overview: string; rating: string;
 }
 
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
@@ -34,7 +34,25 @@ const toMovie = (m: TmdbMovie, g: Map<number, string>): Movie => ({
   poster: m.poster_path ? `${IMG}/w342${m.poster_path}` : null,
   backdrop: m.backdrop_path ? `${IMG}/w780${m.backdrop_path}` : null,
   overview: m.overview,
+  rating: "",
 });
+
+/* Age rating for the viewer's region (falls back to the US). Empty string when TMDB has none. */
+async function certification(id: number): Promise<string> {
+  try {
+    const r = await tmdb<{ results: { iso_3166_1: string; release_dates: { certification: string }[] }[] }>(`/movie/${id}/release_dates`);
+    const find = (country: string) =>
+      r.results.find((x) => x.iso_3166_1 === country)?.release_dates.find((d) => d.certification)?.certification ?? "";
+    return find(process.env.WATCH_REGION ?? "US") || find("US");
+  } catch {
+    return "";
+  }
+}
+
+async function withRatings(movies: Movie[]): Promise<Movie[]> {
+  await Promise.all(movies.map(async (m) => { m.rating = await certification(m.id); }));
+  return movies;
+}
 
 /* ---------- Questions: map answers to TMDB filters ---------- */
 type Answers = Record<string, string | string[]>;
@@ -187,14 +205,25 @@ export async function POST(request: Request) {
       const c = await tmdb<{ cast: { name: string; character: string }[] }>(`/movie/${id}/credits`);
       return Response.json({ cast: c.cast.slice(0, 10).map(({ name, character }) => ({ name, character })) });
     }
+    if (body.mode === "trailer") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id)) throw new Error("Invalid movie id");
+      const v = await tmdb<{ results: { key: string; site: string; type: string; official: boolean }[] }>(`/movie/${id}/videos`);
+      const yt = v.results.filter((x) => x.site === "YouTube");
+      const best =
+        yt.find((x) => x.type === "Trailer" && x.official) ?? yt.find((x) => x.type === "Trailer") ?? yt.find((x) => x.type === "Teaser");
+      return Response.json({ key: best?.key ?? null });
+    }
     if (body.mode === "movie") {
       const id = Number(body.id);
       if (!Number.isInteger(id)) throw new Error("Invalid movie id");
       const m = await tmdb<TmdbMovie & { genres: { id: number; name: string }[] }>(`/movie/${id}`);
-      return Response.json({ movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name) } });
+      return Response.json({
+        movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name), rating: await certification(id) },
+      });
     }
     const g = await genreMap();
-    const movies = await fromAnswers(body.answers ?? {}, g);
+    const movies = await withRatings(await fromAnswers(body.answers ?? {}, g));
     return Response.json({ movies });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });

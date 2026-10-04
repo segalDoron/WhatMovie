@@ -1,7 +1,7 @@
 import type { Movie } from "./types";
 
 /** Lightweight record kept in localStorage. Full details are fetched from TMDB when a favorite is opened. */
-export type Favorite = Pick<Movie, "id" | "title" | "genres" | "year" | "score" | "poster">;
+export type Favorite = Pick<Movie, "id" | "title" | "genres" | "year" | "score" | "poster" | "rating">;
 
 const KEY = "movie-tonight:favorites";
 const listeners = new Set<() => void>();
@@ -41,7 +41,7 @@ const onStorage = (e: StorageEvent) => {
   }
 };
 
-const pick = (m: Favorite): Favorite => ({ id: m.id, title: m.title, genres: m.genres, year: m.year, score: m.score, poster: m.poster });
+const pick = (m: Favorite): Favorite => ({ id: m.id, title: m.title, genres: m.genres, year: m.year, score: m.score, poster: m.poster, rating: m.rating });
 
 export const favorites = {
   getAll: (): Favorite[] => (snapshot ??= read()),

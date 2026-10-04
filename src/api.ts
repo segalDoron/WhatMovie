@@ -45,3 +45,19 @@ export async function fetchMovie(id: number): Promise<MovieDetails> {
   movieCache.set(id, data.movie);
   return data.movie as MovieDetails;
 }
+
+const trailerCache = new Map<number, string | null>();
+
+/** YouTube key of the best trailer for a movie, or null when none exists. */
+export async function fetchTrailer(id: number): Promise<string | null> {
+  if (trailerCache.has(id)) return trailerCache.get(id)!;
+  const res = await fetch("/api/movies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "trailer", id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Could not load trailer");
+  trailerCache.set(id, data.key ?? null);
+  return data.key ?? null;
+}
