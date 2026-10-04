@@ -5,7 +5,7 @@ import ResultsList from "./ResultsList";
 import MovieDetail from "./MovieDetail";
 import FavoritesSheet from "./FavoritesSheet";
 import FavoritesDrawer from "./FavoritesDrawer";
-import { Heart } from "./Icons";
+import { Heart, ChevronRight } from "./Icons";
 import { useFavorites } from "./useFavorites";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
@@ -15,7 +15,7 @@ import type { Movie, View } from "./types";
 
 type Theme = "light" | "dark";
 type NavState = {
-  view: "form" | "loading" | "results" | "error" | "detail" | "favorites";
+  view: "form" | "loading" | "results" | "error" | "detail";
   id?: number;
   idx?: number; // distance from the search form entry, so "Start over" can jump straight back to it
 };
@@ -24,6 +24,8 @@ type NavState = {
 const curIdx = () => (history.state as NavState | null)?.idx ?? 0;
 const pushNav = (s: Omit<NavState, "idx">) => history.pushState({ ...s, idx: curIdx() + 1 } as NavState, "");
 const replaceNav = (s: Omit<NavState, "idx">) => history.replaceState({ ...s, idx: curIdx() } as NavState, "");
+
+type Source = "results" | "favorites";
 
 // `inert` removes a hidden layer from tab order and screen readers.
 const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
@@ -42,7 +44,8 @@ function useTheme(): [Theme, () => void] {
 
 /*
  * History stack: form -> (loading, replaced by) results -> detail
- *                any screen -> favorites (mobile sheet) -> detail (the sheet stays open behind it)
+ * The favorites sheet / drawer is plain UI state, not a history entry: it stays open while you move between
+ * pages and closes only with its close button, the dimmed area outside it, or Escape (closing never changes the page).
  * UI back buttons call history.back(), so the native back button and the UI always walk the same stack.
  * popstate is the single place that updates the view.
  */
@@ -54,7 +57,7 @@ export default function App() {
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
-  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom sheet (tied to browser history)
+  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom sheet (plain UI state)
   const [drawerOpen, setDrawerOpen] = useState(false); // desktop drawer (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const sheetShown = sheetOpen && !isDesktop;
@@ -68,6 +71,12 @@ export default function App() {
   const requestId = useRef(0); // ignore a search that was navigated away from
   const favRequest = useRef(0); // ignore a favorite fetch that was cancelled
   const openRequest = useRef(0); // ignore a details page whose images arrive after the user moved on
+  const detailSource = useRef(new Map<number, Source>()); // which list each opened movie came from (for "next")
+  const detailRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    detailRef.current?.scrollTo({ top: 0 }); // a new movie always starts at the top
+  }, [selected?.id]);
 
   useEffect(() => {
     // The page always starts at the search form, even after a refresh.
@@ -89,16 +98,10 @@ export default function App() {
         if (m) {
           setSelected(m);
           setDetailOpen(true);
-          setSheetOpen(false); // a sheet entry sits above this one in history, not below
           return;
         }
       }
       setDetailOpen(false);
-      if (s?.view === "favorites") {
-        setSheetOpen(true);
-        return;
-      }
-      setSheetOpen(false);
       if (s?.view === "results" && moviesRef.current.length) setView("results");
       else if (s?.view === "error") setView("error");
       else setView("form");
@@ -141,29 +144,48 @@ export default function App() {
   };
 
   // The details page only appears once its main image is loaded, so nothing jumps.
-  const openDetail = async (m: Movie, silent = false) => {
+  // `replace` swaps the current details entry (used by "next") so Back still returns to the list.
+  const openDetail = async (m: Movie, source: Source, opts: { silent?: boolean; replace?: boolean } = {}) => {
     const id = ++openRequest.current;
-    if (!silent) setOpening(true);
+    if (!opts.silent) setOpening(true);
     await preloadImages([m.backdrop ?? m.poster]);
     if (id !== openRequest.current) return; // the user navigated away meanwhile
     setOpening(false);
     movieCache.current.set(m.id, m);
-    pushNav({ view: "detail", id: m.id });
+    detailSource.current.set(m.id, source);
+    (opts.replace ? replaceNav : pushNav)({ view: "detail", id: m.id });
     setSelected(m);
     setDetailOpen(true);
   };
 
-  // Heart in the mobile menu bar. Closed: open the sheet (hiding any details page so the sheet is visible).
-  // Open: go back one step, which closes the sheet, or reveals it again if a details page is on top.
-  const toggleSheet = () => {
-    if (sheetOpen) {
-      history.back();
-      return;
+  // The movie after the current one in the list it was opened from.
+  const sourceOf = (m: Movie): Source => detailSource.current.get(m.id) ?? "results";
+  const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : movies);
+  const nextId = (() => {
+    if (!selected) return null;
+    const list = listOf(sourceOf(selected));
+    const i = list.findIndex((x) => x.id === selected.id);
+    return i >= 0 && i < list.length - 1 ? list[i + 1].id : null;
+  })();
+
+  const goNext = async () => {
+    if (nextId === null || !selected) return;
+    const source = sourceOf(selected);
+    const cached = movieCache.current.get(nextId);
+    if (cached) return openDetail(cached, source, { replace: true });
+    const token = ++openRequest.current;
+    setOpening(true);
+    try {
+      const m = await fetchMovie(nextId); // favorites only keep the basics, so fetch the full details
+      if (token !== openRequest.current) return;
+      await openDetail(m, source, { replace: true });
+    } catch {
+      if (token === openRequest.current) setOpening(false);
     }
-    pushNav({ view: "favorites" });
-    setDetailOpen(false);
-    setSheetOpen(true);
   };
+
+  // Heart in the mobile menu bar: opens / closes the sheet without leaving the current page.
+  const toggleSheet = () => setSheetOpen((o) => !o);
 
   // A favorite only stores the basics, so fetch the full details from TMDB first (with a loader).
   const openFavorite = async (fav: Favorite) => {
@@ -173,7 +195,7 @@ export default function App() {
     try {
       const m = movieCache.current.get(fav.id) ?? (await fetchMovie(fav.id));
       if (id !== favRequest.current) return; // sheet / drawer action was cancelled meanwhile
-      await openDetail(m, true); // also waits for the image; the sheet / drawer stays open underneath
+      await openDetail(m, "favorites", { silent: true }); // also waits for the image; the sheet / drawer stays open underneath
       if (id === favRequest.current) setFavLoading(false);
     } catch {
       if (id !== favRequest.current) return;
@@ -202,6 +224,12 @@ export default function App() {
             </button>
           )}
 
+          {detailOpen && (
+            <button className="next-top" onClick={goNext} disabled={nextId === null} aria-label="Next movie">
+              <ChevronRight />
+            </button>
+          )}
+
           {view === "form" && (
             <div className="layer" {...inertProps(sheetShown || detailOpen)}>
               <QuestionForm onSubmit={submit} />
@@ -218,12 +246,12 @@ export default function App() {
           {view === "results" && (
             <div className="stage">
               <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen} {...inertProps(sheetShown || detailOpen)}>
-                <ResultsList movies={movies} tabbable={!detailOpen && !sheetShown} onStartOver={startOver} onOpen={(m) => openDetail(m)} />
+                <ResultsList movies={movies} tabbable={!detailOpen && !sheetShown} onStartOver={startOver} onOpen={(m) => openDetail(m, "results")} />
               </section>
             </div>
           )}
 
-          <section className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen}>
+          <section ref={detailRef} className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen} {...inertProps(sheetShown)}>
             <MovieDetail movie={selected} tabbable={detailOpen} onBack={goBack} onStartOver={startOver} />
           </section>
 
@@ -267,7 +295,7 @@ export default function App() {
           items={favorites}
           loading={favLoading}
           error={favError}
-          onClose={goBack}
+          onClose={() => setSheetOpen(false)}
           onPick={openFavorite}
         />
       )}

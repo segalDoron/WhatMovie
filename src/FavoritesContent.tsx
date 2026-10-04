@@ -26,7 +26,10 @@ export default function FavoritesContent({ items, loading, error, onClose, onPic
 
       <div className="sheet-body" aria-busy={loading}>
         {items.length === 0 ? (
-          <p className="empty">No favorites yet. Tap the heart on a movie to save it here.</p>
+          <div className="empty-state">
+            <img src="/hurt.png" alt="" width="140" height="140" />
+            <p>No favorites yet. Tap the heart on a movie to save it here.</p>
+          </div>
         ) : (
           <ul className="list">
             {items.map((f) => (

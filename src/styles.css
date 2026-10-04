@@ -205,12 +205,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- Favorites bottom sheet (fixed, rendered on <body>, never affects the page behind) ---------- */
 .backdrop {
-  position: fixed; inset: 0; z-index: 12; background: rgba(5, 25, 32, .5); opacity: 0; visibility: hidden;
+  position: fixed; inset: 0; z-index: 34; background: rgba(5, 25, 32, .5); opacity: 0; visibility: hidden;
   transition: opacity .3s, visibility 0s .3s;
 }
 .backdrop.show { opacity: 1; visibility: visible; transition-delay: 0s; }
 .sheet {
-  position: fixed; z-index: 15; bottom: 0; left: 0; right: 0; margin-inline: auto; width: min(100%, var(--col));
+  position: fixed; z-index: 35; bottom: 0; left: 0; right: 0; margin-inline: auto; width: min(100%, var(--col));
   height: 70vh; height: 70dvh; display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); color: var(--ink); border-radius: 24px 24px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .25);
   transform: translateY(100%); visibility: hidden;
@@ -250,7 +250,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .drawer-inner { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; border-left: 1.5px solid var(--line); }
 
 /* Theme + heart buttons slide left to stay clear of the open drawer */
-.theme, .fav-top { transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s; }
+.theme, .fav-top, .next-top { transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s; }
 .app.drawer-open .theme { right: max(calc(max(0px, (100% - var(--col)) / 2) + 24px), 396px); }
 .app.drawer-open .fav-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 72px), 444px); }
 
@@ -295,3 +295,19 @@ li.has-remove { position: relative; }
   background: color-mix(in srgb, var(--bg) 55%, transparent); animation: fadein .2s .3s both;
 }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Empty favorites ---------- */
+.sheet-body { display: flex; flex-direction: column; }
+.empty-state { flex: 1; min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+.empty-state img { width: 140px; height: auto; }
+.empty-state p { margin: 0; max-width: 26ch; font-weight: 700; color: var(--muted); }
+
+/* ---------- Details: next movie button, left of the theme / heart buttons ---------- */
+.next-top {
+  position: absolute; top: 12px; right: calc(max(0px, (100% - var(--col)) / 2) + 72px); z-index: 30;
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface);
+  display: grid; place-items: center; color: var(--ink);
+}
+.next-top:disabled { opacity: .4; cursor: not-allowed; }
+@media (min-width: 768px) { .next-top { right: calc(max(0px, (100% - var(--col)) / 2) + 120px); } }
+.app.drawer-open .next-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 120px), 492px); }
