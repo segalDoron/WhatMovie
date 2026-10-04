@@ -67,32 +67,108 @@ async function fromText(input: string, g: Map<number, string>): Promise<Movie[]>
   return found.filter(Boolean).map((m) => toMovie(m, g));
 }
 
-/* ---------- Questions: map answers to TMDB discover filters ---------- */
+/* ---------- Questions: map answers to TMDB filters ---------- */
+type Answers = Record<string, string | string[]>;
+
 const MOOD: Record<string, string> = {
   laugh: "35", thrilled: "53|28", moved: "18|10749", mindbent: "878|9648", comforted: "10751|16|35",
+  twists: "9648|53", mystery: "9648",
+};
+const GENRE: Record<string, string> = {
+  horror: "27", comedy: "35", scifi: "878", action: "28", drama: "18", thriller: "53",
+  romance: "10749", animation: "16", fantasy: "14", crime: "80", crazynight: "35|12|80",
 };
 const AVOID: Record<string, number> = { horror: 27, war: 10752, romance: 10749 };
+// Tone works by excluding genres that clash with it.
+const TONE_EXCLUDE: Record<string, number[]> = {
+  dark: [35, 10751, 16], serious: [35, 10751], light: [27, 53, 80], funny: [27, 53, 80],
+};
+// "This or that" taste picks that can be expressed as a genre.
+const TASTE_GENRES: Record<string, string> = {
+  laugh: "35", tense: "53", think: "9648|878", feel: "18|10749", shocking: "9648|53", action: "28", slow: "18|9648",
+};
 
-async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, string>): Promise<Movie[]> {
-  // A loved movie takes priority: use TMDB's "similar" recommendations.
-  const loved = String(a.loved ?? "").trim();
-  if (loved) {
-    const s = await tmdb<{ results: TmdbMovie[] }>("/search/movie", { query: loved });
-    if (s.results[0]) {
-      const r = await tmdb<{ results: TmdbMovie[] }>(`/movie/${s.results[0].id}/recommendations`);
-      if (r.results.length) return r.results.slice(0, 20).map((m) => toMovie(m, g));
+const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
+
+function excludedGenres(a: Answers): number[] {
+  const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
+  return [...new Set([...avoid, ...(TONE_EXCLUDE[String(a.tone)] ?? [])])];
+}
+
+function yearRange(a: Answers) {
+  return { from: Number(a.yearFrom) || undefined, to: Number(a.yearTo) || undefined };
+}
+
+const parseSeed = (q: string) => {
+  const m = q.match(/^(.*)\s\((\d{4})\)$/);
+  return m ? { title: m[1], year: m[2] } : { title: q };
+};
+
+/* Seed movies ("loved" + this-or-that picks): rank TMDB recommendations by how many seeds agree. */
+async function fromSeeds(seeds: string[], a: Answers, g: Map<number, string>): Promise<Movie[]> {
+  const found = await Promise.all(
+    seeds.slice(0, 12).map(async (q) => {
+      const { title, year } = parseSeed(q);
+      const s = await tmdb<{ results: TmdbMovie[] }>("/search/movie", { query: title, ...(year ? { year } : {}) });
+      return s.results[0];
+    })
+  );
+  const seedMovies = found.filter(Boolean);
+  if (!seedMovies.length) return [];
+  const seedIds = new Set(seedMovies.map((m) => m.id));
+
+  const lists = await Promise.all(
+    seedMovies.map((m) =>
+      tmdb<{ results: TmdbMovie[] }>(`/movie/${m.id}/recommendations`).then((r) => r.results).catch(() => [] as TmdbMovie[])
+    )
+  );
+  const tally = new Map<number, { m: TmdbMovie; n: number }>();
+  for (const list of lists)
+    for (const m of list) {
+      if (seedIds.has(m.id)) continue;
+      const e = tally.get(m.id);
+      if (e) e.n++;
+      else tally.set(m.id, { m, n: 1 });
     }
+  const ranked = [...tally.values()].sort((x, y) => y.n - x.n || y.m.vote_average - x.m.vote_average).map((e) => e.m);
+
+  const { from, to } = yearRange(a);
+  const bad = new Set(excludedGenres(a));
+  const ok = (m: TmdbMovie) => {
+    const y = Number(m.release_date?.slice(0, 4));
+    if (from && y && y < from) return false;
+    if (to && y && y > to) return false;
+    return !(m.genre_ids ?? []).some((id) => bad.has(id));
+  };
+  const filtered = ranked.filter(ok);
+  return (filtered.length >= 5 ? filtered : ranked).slice(0, 20).map((m) => toMovie(m, g));
+}
+
+async function fromAnswers(a: Answers, g: Map<number, string>): Promise<Movie[]> {
+  // Movie picks take priority; year, skipped genres and tone still apply.
+  const seeds = [String(a.loved ?? "").trim(), ...asList(a.seeds)].filter(Boolean);
+  if (seeds.length) {
+    const r = await fromSeeds(seeds, a, g);
+    if (r.length) return r;
   }
 
+  const taste = asList(a.taste);
   const p: Record<string, string | number> = {
     "vote_count.gte": 300,
     watch_region: process.env.WATCH_REGION ?? "US",
   };
+
+  // Genre precedence: kids > chosen genres > mood > taste picks > "humorous" tone.
+  const chosen = asList(a.genres).map((k) => GENRE[k]).filter(Boolean);
+  const fromTaste = taste.map((k) => TASTE_GENRES[k]).filter(Boolean);
   if (a.who === "kids") {
     p.with_genres = "10751|16";
     p.certification_country = "US";
     p["certification.lte"] = "PG";
-  } else if (MOOD[String(a.mood)]) p.with_genres = MOOD[String(a.mood)];
+  } else if (chosen.length) p.with_genres = chosen.join("|");
+  else if (MOOD[String(a.mood)]) p.with_genres = MOOD[String(a.mood)];
+  else if (fromTaste.length) p.with_genres = fromTaste.join("|");
+  else if (a.tone === "funny") p.with_genres = "35";
 
   if (a.time === "short") p["with_runtime.lte"] = 90;
   if (a.time === "medium") { p["with_runtime.gte"] = 85; p["with_runtime.lte"] = 130; }
@@ -101,12 +177,22 @@ async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, 
   if (a.novelty === "familiar") { p.sort_by = "vote_average.desc"; p["vote_count.gte"] = 5000; }
   else { p.sort_by = "popularity.desc"; p.page = 1 + Math.floor(Math.random() * 3); }
 
-  if (a.platform && a.platform !== "any") p.with_watch_providers = String(a.platform);
-  if (a.language === "en") p.with_original_language = "en";
-  if (a.era === "classic") p["primary_release_date.lte"] = "1999-12-31";
-  if (a.era === "recent") p["primary_release_date.gte"] = "2015-01-01";
+  if (taste.includes("gem")) { p["vote_count.gte"] = 300; p["vote_count.lte"] = 4000; p["vote_average.gte"] = 7; p.sort_by = "vote_average.desc"; }
+  if (taste.includes("classic")) { p["vote_count.gte"] = 8000; p.sort_by = "vote_average.desc"; }
 
-  const no = ((a.avoid as string[]) ?? []).map((k) => AVOID[k]).filter(Boolean);
+  if (a.platform && a.platform !== "any") p.with_watch_providers = String(a.platform);
+
+  const { from, to } = yearRange(a);
+  if (from) p["primary_release_date.gte"] = `${from}-01-01`;
+  if (to) p["primary_release_date.lte"] = `${to}-12-31`;
+
+  const actor = String(a.actor ?? "").trim();
+  if (actor) {
+    const s = await tmdb<{ results: { id: number }[] }>("/search/person", { query: actor });
+    if (s.results[0]) p.with_cast = s.results[0].id;
+  }
+
+  const no = excludedGenres(a);
   if (no.length) p.without_genres = no.join(",");
 
   let r = await tmdb<{ results: TmdbMovie[] }>("/discover/movie", p);
@@ -114,6 +200,7 @@ async function fromAnswers(a: Record<string, string | string[]>, g: Map<number, 
     // Too strict: relax the quality filters and go back to the first page.
     p.page = 1;
     p["vote_count.gte"] = 100;
+    delete p["vote_count.lte"];
     delete p["vote_average.gte"];
     r = await tmdb<{ results: TmdbMovie[] }>("/discover/movie", p);
   }

@@ -155,3 +155,40 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Year range ---------- */
+.years { display: flex; flex-direction: column; gap: 10px; }
+.years-label { margin: 0; font-weight: 700; color: var(--accent); }
+.range { position: relative; height: 32px; }
+.range .rail, .range .fill { position: absolute; top: 50%; height: 6px; border-radius: 999px; transform: translateY(-50%); }
+.range .rail { left: 0; right: 0; background: var(--line); }
+.range .fill { background: var(--primary); }
+.range input { position: absolute; inset: 0; width: 100%; margin: 0; background: none; pointer-events: none; appearance: none; -webkit-appearance: none; }
+.range input::-webkit-slider-runnable-track { background: transparent; }
+.range input::-moz-range-track { background: transparent; }
+.range input::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: grab;
+}
+.range input::-moz-range-thumb {
+  pointer-events: auto; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: grab;
+}
+.range input:focus-visible { outline: none; }
+.range input:focus-visible::-webkit-slider-thumb { outline: 3px solid var(--ink); outline-offset: 2px; }
+.range input:focus-visible::-moz-range-thumb { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+/* ---------- This or that table ---------- */
+.vs { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.vs thead th { font-size: .8rem; color: var(--muted); font-weight: 700; padding: 0 4px 6px; text-align: left; }
+.vs .vs-group { text-align: left; padding: 16px 4px 6px; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.vs td { padding: 4px; vertical-align: stretch; width: 46%; }
+.vs td.or { width: 8%; text-align: center; color: var(--muted); font-size: .8rem; }
+.vs label {
+  display: flex; gap: 8px; align-items: flex-start; height: 100%; padding: 10px; cursor: pointer;
+  border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); transition: border-color .15s, background .15s;
+}
+.vs label:has(input:checked) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 20%, var(--surface)); font-weight: 700; }
+.vs label:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+.vs input { accent-color: var(--primary); width: 18px; height: 18px; margin: 2px 0 0; flex: none; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

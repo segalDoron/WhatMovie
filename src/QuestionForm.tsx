@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { CORE, MORE, type Question } from "./options";
+import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
+import YearRange, { MIN_YEAR, MAX_YEAR } from "./YearRange";
+import ThisOrThat, { type Side } from "./ThisOrThat";
 import type { Answers } from "./types";
 
 const MAX = 80;
@@ -10,6 +13,8 @@ interface Props {
 
 export default function QuestionForm({ onSubmit }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
+  const [years, setYears] = useState<[number, number]>([MIN_YEAR, MAX_YEAR]);
+  const [picks, setPicks] = useState<Record<string, Side>>({});
   const [showMore, setShowMore] = useState(false);
   const [freeText, setFreeText] = useState(false);
   const [text, setText] = useState("");
@@ -21,8 +26,19 @@ export default function QuestionForm({ onSubmit }: Props) {
       return { ...a, [q.key]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] };
     });
 
+  const pickSide = (key: string, side: Side) =>
+    setPicks((p) => {
+      const next = { ...p };
+      if (next[key] === side) delete next[key];
+      else next[key] = side;
+      return next;
+    });
+
   const isOn = (q: Question, v: string) =>
     q.multi ? ((answers[q.key] as string[]) ?? []).includes(v) : answers[q.key] === v;
+
+  const setText1 = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setAnswers((a) => ({ ...a, [key]: e.target.value }));
 
   const renderQ = (q: Question) => (
     <fieldset key={q.key} className="q" disabled={freeText}>
@@ -37,6 +53,19 @@ export default function QuestionForm({ onSubmit }: Props) {
     </fieldset>
   );
 
+  const buildAnswers = (): Answers => {
+    const seeds: string[] = [];
+    const taste: string[] = [];
+    for (const p of MOVIE_PAIRS) if (picks[p.key]) seeds.push(p[picks[p.key]].value);
+    for (const p of TASTE_PAIRS) if (picks[p.key]) taste.push(p[picks[p.key]].value);
+    const out: Answers = { ...answers, seeds, taste };
+    if (years[0] !== MIN_YEAR || years[1] !== MAX_YEAR) {
+      out.yearFrom = String(years[0]);
+      out.yearTo = String(years[1]);
+    }
+    return out;
+  };
+
   const canSubmit = freeText ? text.trim().length > 0 : true;
 
   return (
@@ -45,7 +74,7 @@ export default function QuestionForm({ onSubmit }: Props) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!canSubmit) return;
-        onSubmit(freeText ? { mode: "text", input: text.trim() } : { mode: "answers", answers });
+        onSubmit(freeText ? { mode: "text", input: text.trim() } : { mode: "answers", answers: buildAnswers() });
       }}
     >
       <h1>What are we watching tonight?</h1>
@@ -82,15 +111,25 @@ export default function QuestionForm({ onSubmit }: Props) {
         <div className="more-inner">
           <div className="more">
             {MORE.map(renderQ)}
+
+            <fieldset className="q" disabled={freeText}>
+              <legend>Release years</legend>
+              <YearRange value={years} onChange={setYears} />
+            </fieldset>
+
+            <fieldset className="q" disabled={freeText}>
+              <legend>Actor name</legend>
+              <input className="text" type="text" value={(answers.actor as string) ?? ""} onChange={setText1("actor")} placeholder="e.g. Tom Hanks" />
+            </fieldset>
+
             <fieldset className="q" disabled={freeText}>
               <legend>A movie you loved recently</legend>
-              <input
-                className="text"
-                type="text"
-                value={(answers.loved as string) ?? ""}
-                onChange={(e) => setAnswers((a) => ({ ...a, loved: e.target.value }))}
-                placeholder="We'll find similar ones"
-              />
+              <input className="text" type="text" value={(answers.loved as string) ?? ""} onChange={setText1("loved")} placeholder="We'll find similar ones" />
+            </fieldset>
+
+            <fieldset className="q" disabled={freeText}>
+              <legend>This or that? Tick one side per row</legend>
+              <ThisOrThat picks={picks} onPick={pickSide} />
             </fieldset>
           </div>
         </div>
