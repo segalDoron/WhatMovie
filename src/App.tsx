@@ -68,7 +68,7 @@ export default function App() {
         const m = movieCache.current.get(s.id ?? -1);
         if (m) {
           setSelected(m);
-          setDetailOpen(true); // sheet / list stay as they were underneath
+          setDetailOpen(true); // whatever is underneath stays as it was
           return;
         }
       }
@@ -110,9 +110,11 @@ export default function App() {
     }
   };
 
-  const openDetail = (m: Movie) => {
+  const openDetail = (m: Movie, replace = false) => {
     movieCache.current.set(m.id, m);
-    history.pushState({ view: "detail", id: m.id } satisfies NavState, "");
+    const state = { view: "detail", id: m.id } satisfies NavState;
+    if (replace) history.replaceState(state, "");
+    else history.pushState(state, "");
     setSelected(m);
     setDetailOpen(true);
   };
@@ -122,10 +124,17 @@ export default function App() {
     setSheetOpen(true);
   };
 
+  // Opening a favorite closes the sheet. The detail replaces the sheet's history entry,
+  // so back from the details returns to the search page (not to a reopened sheet).
+  const showFavorite = (m: Movie) => {
+    setSheetOpen(false);
+    openDetail(m, true);
+  };
+
   // A favorite only stores the basics, so fetch the full details from TMDB first (with a loader).
   const openFavorite = async (fav: Favorite) => {
     const cached = movieCache.current.get(fav.id);
-    if (cached) return openDetail(cached);
+    if (cached) return showFavorite(cached);
 
     const id = ++favRequest.current;
     setFavLoading(true);
@@ -134,7 +143,7 @@ export default function App() {
       const m = await fetchMovie(fav.id);
       if (id !== favRequest.current) return; // sheet was closed meanwhile
       setFavLoading(false);
-      openDetail(m);
+      showFavorite(m);
     } catch {
       if (id !== favRequest.current) return;
       setFavLoading(false);
