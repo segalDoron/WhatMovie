@@ -8,7 +8,7 @@ interface TmdbMovie {
 }
 interface Movie {
   id: number; title: string; genres: string[]; year: string; score: number;
-  poster: string | null; backdrop: string | null; overview: string; rating: string;
+  poster: string | null; backdrop: string | null; overview: string; rating: string; providers: string[];
 }
 
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
@@ -35,22 +35,38 @@ const toMovie = (m: TmdbMovie, g: Map<number, string>): Movie => ({
   backdrop: m.backdrop_path ? `${IMG}/w780${m.backdrop_path}` : null,
   overview: m.overview,
   rating: "",
+  providers: [],
 });
 
-/* Age rating for the viewer's region (falls back to the US). Empty string when TMDB has none. */
-async function certification(id: number): Promise<string> {
-  try {
-    const r = await tmdb<{ results: { iso_3166_1: string; release_dates: { certification: string }[] }[] }>(`/movie/${id}/release_dates`);
-    const find = (country: string) =>
-      r.results.find((x) => x.iso_3166_1 === country)?.release_dates.find((d) => d.certification)?.certification ?? "";
-    return find(process.env.WATCH_REGION ?? "US") || find("US");
-  } catch {
-    return "";
-  }
+/* Age rating and streaming services for the viewer's region (falls back to the US for the rating). */
+interface ExtrasPayload {
+  release_dates?: { results: { iso_3166_1: string; release_dates: { certification: string }[] }[] };
+  "watch/providers"?: { results: Record<string, { flatrate?: { provider_name: string; display_priority?: number }[] }> };
+}
+const EXTRAS = { append_to_response: "release_dates,watch/providers" };
+
+function pickExtras(d: ExtrasPayload): { rating: string; providers: string[] } {
+  const region = process.env.WATCH_REGION ?? "US";
+  const cert = (country: string) =>
+    d.release_dates?.results.find((x) => x.iso_3166_1 === country)?.release_dates.find((r) => r.certification)?.certification ?? "";
+  const names = (d["watch/providers"]?.results[region]?.flatrate ?? [])
+    .slice()
+    .sort((x, y) => (x.display_priority ?? 99) - (y.display_priority ?? 99))
+    .map((p) => p.provider_name)
+    .filter((n) => !/with ads/i.test(n)); // skip the ad-tier duplicates ("Netflix Standard with Ads")
+  return { rating: cert(region) || cert("US"), providers: unique(names).slice(0, 6) };
 }
 
-async function withRatings(movies: Movie[]): Promise<Movie[]> {
-  await Promise.all(movies.map(async (m) => { m.rating = await certification(m.id); }));
+async function withExtras(movies: Movie[]): Promise<Movie[]> {
+  await Promise.all(
+    movies.map(async (m) => {
+      try {
+        Object.assign(m, pickExtras(await tmdb<ExtrasPayload>(`/movie/${m.id}`, EXTRAS)));
+      } catch {
+        /* leave the rating and providers empty */
+      }
+    })
+  );
   return movies;
 }
 
@@ -489,9 +505,9 @@ export async function POST(request: Request) {
     if (body.mode === "movie") {
       const id = Number(body.id);
       if (!Number.isInteger(id)) throw new Error("Invalid movie id");
-      const m = await tmdb<TmdbMovie & { genres: { id: number; name: string }[] }>(`/movie/${id}`);
+      const m = await tmdb<TmdbMovie & ExtrasPayload & { genres: { id: number; name: string }[] }>(`/movie/${id}`, EXTRAS);
       return Response.json({
-        movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name), rating: await certification(id) },
+        movie: { ...toMovie(m, new Map()), genres: m.genres.map((x) => x.name), ...pickExtras(m) },
       });
     }
     const g = await genreMap();
@@ -501,7 +517,7 @@ export async function POST(request: Request) {
       g,
       cursor ? { cursor, seen: ints(body.seen, 600) } : null
     );
-    const movies = await withRatings(result.movies);
+    const movies = await withExtras(result.movies);
     return Response.json({ movies, cursor: result.cursor });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });

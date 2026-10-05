@@ -317,3 +317,7 @@ li.has-remove { position: relative; }
 .more-link { align-self: center; font-size: 1.05rem; padding: 10px 16px; }
 .more-loading { display: grid; place-items: center; padding: 8px; }
 .more-msg { margin: 0; color: var(--muted); font-size: .95rem; text-align: center; }
+
+/* ---------- Streaming service tags ---------- */
+.providers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px !important; }
+.tag { padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.4; color: var(--ink); background: color-mix(in srgb, var(--primary) 22%, transparent); }
