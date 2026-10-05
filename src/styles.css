@@ -281,13 +281,34 @@ li.has-remove { position: relative; }
   background: rgba(5, 25, 32, .6); animation: fadein .2s;
 }
 .modal {
-  width: min(100%, 720px); max-height: 90dvh; overflow: hidden; border-radius: 20px;
-  background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
+  width: min(100%, 720px);
+  max-height: 90dvh;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 12px 12px 18px; }
 .modal-head h3 { margin: 0; font-size: 1.05rem; }
-.video { aspect-ratio: 16 / 9; background: #000; }
-.video iframe { width: 100%; height: 100%; border: 0; display: block; }
+.video {
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.video iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .video {
+    aspect-ratio: auto;
+    height: 60dvh;
+  }
+}
 
 /* ---------- Waiting for a details page (appears only if it takes a moment) ---------- */
 .busy {
