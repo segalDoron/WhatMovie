@@ -9,9 +9,9 @@ import { Heart, ChevronRight } from "./Icons";
 import { useFavorites } from "./useFavorites";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
-import { fetchMovies, fetchMovie } from "./api";
+import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
 import type { Favorite } from "./favorites";
-import type { Movie, View } from "./types";
+import type { Answers, Movie, View } from "./types";
 
 type Theme = "light" | "dark";
 type NavState = {
@@ -54,6 +54,9 @@ export default function App() {
   const favorites = useFavorites();
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [cursor, setCursor] = useState<Cursor | null>(null); // where "show more" continues; null = nothing more to load
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreMessage, setMoreMessage] = useState("");
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
@@ -70,6 +73,8 @@ export default function App() {
   const movieCache = useRef(new Map<number, Movie>()); // every movie opened this session (for back/forward)
   const requestId = useRef(0); // ignore a search that was navigated away from
   const favRequest = useRef(0); // ignore a favorite fetch that was cancelled
+  const answersRef = useRef<Answers>({}); // the answers behind the current results (needed for "show more")
+  const moreToken = useRef(0); // ignore a "show more" answer that arrives after a new search or "start over"
   const openRequest = useRef(0); // ignore a details page whose images arrive after the user moved on
   const detailSource = useRef(new Map<number, Source>()); // which list each opened movie came from (for "next")
   const detailRef = useRef<HTMLElement>(null);
@@ -104,7 +109,11 @@ export default function App() {
       setDetailOpen(false);
       if (s?.view === "results" && moviesRef.current.length) setView("results");
       else if (s?.view === "error") setView("error");
-      else setView("form");
+      else {
+        moreToken.current++;
+        setLoadingMore(false);
+        setView("form");
+      }
     };
 
     window.addEventListener("popstate", onPopState);
@@ -132,7 +141,12 @@ export default function App() {
     try {
       const result = await fetchMovies(answers);
       if (id !== requestId.current) return; // user went back while loading
-      setMovies(result);
+      answersRef.current = answers;
+      moreToken.current++;
+      setMovies(result.movies);
+      setCursor(result.cursor);
+      setLoadingMore(false);
+      setMoreMessage("");
       replaceNav({ view: "results" });
       setView("results");
     } catch (e) {
@@ -140,6 +154,26 @@ export default function App() {
       setError(e instanceof Error ? e.message : "Something went wrong");
       replaceNav({ view: "error" });
       setView("error");
+    }
+  };
+
+  const loadMore = async () => {
+    if (cursor === null || loadingMore) return;
+    const token = moreToken.current;
+    setLoadingMore(true);
+    setMoreMessage("");
+    try {
+      const r = await fetchMore(answersRef.current, cursor, movies.map((m) => m.id));
+      if (token !== moreToken.current) return;
+      const have = new Set(movies.map((m) => m.id));
+      const fresh = r.movies.filter((m) => !have.has(m.id));
+      setMovies((prev) => [...prev, ...fresh]);
+      setCursor(r.cursor);
+      if (!fresh.length && !r.cursor) setMoreMessage("That's everything we found.");
+    } catch {
+      if (token === moreToken.current) setMoreMessage("Couldn't load more. Tap Show more to try again.");
+    } finally {
+      if (token === moreToken.current) setLoadingMore(false);
     }
   };
 
@@ -246,7 +280,16 @@ export default function App() {
           {view === "results" && (
             <div className="stage">
               <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen} {...inertProps(sheetShown || detailOpen)}>
-                <ResultsList movies={movies} tabbable={!detailOpen && !sheetShown} onStartOver={startOver} onOpen={(m) => openDetail(m, "results")} />
+                <ResultsList
+                  movies={movies}
+                  tabbable={!detailOpen && !sheetShown}
+                  onStartOver={startOver}
+                  onOpen={(m) => openDetail(m, "results")}
+                  hasMore={cursor !== null}
+                  loadingMore={loadingMore}
+                  moreMessage={moreMessage}
+                  onMore={loadMore}
+                />
               </section>
             </div>
           )}

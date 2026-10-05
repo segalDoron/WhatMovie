@@ -283,42 +283,70 @@ function isValid(m: TmdbMovie, plan: Plan): boolean {
 }
 
 /*
- * Page loop: keep fetching TMDB pages, filter each batch, and collect unique valid movies until TARGET.
- * - seenIds: every movie ID already looked at, so repeats never show up across pages (or passes).
- * - tmdbPage: the page pointer; each fetch continues where the previous one finished.
- * Pass 1 is strict (quality + Gemini keywords). Pass 2 relaxes quality and keywords only; genre rules never relax.
+ * Page loop: keep fetching TMDB pages, filter each batch, and collect unique valid movies until the target is reached.
+ * - seen: every movie ID already shown or looked at, so repeats never appear across pages, passes or "show more" requests.
+ * - the page pointer (pass + page) says where to continue; it is returned to the app as a cursor.
+ * Pass 0 is strict (quality + Gemini keywords). Pass 1 relaxes quality and keywords only.
+ * Pass 2 is the generic fallback used only by "show more": nearby genres, much lighter filtering.
  */
-async function collect(plan: Plan, base: Params, keywordIds: number[], startPage: number): Promise<TmdbMovie[]> {
-  const seenIds = new Set<number>();
-  const found: TmdbMovie[] = [];
-  const passes: Params[] = [
-    keywordIds.length ? { ...base, with_keywords: keywordIds.join("|") } : base,
-    { ...base, "vote_count.gte": 100, "vote_average.gte": 0 },
-  ];
+const GENERIC_PASS = 2;
 
-  for (const [i, params] of passes.entries()) {
-    let tmdbPage = i === 0 ? startPage : 1;
-    let scanned = 0;
-    while (found.length < TARGET && scanned < MAX_PAGES) {
-      const r = await tmdb<DiscoverPage>("/discover/movie", { ...params, page: tmdbPage });
-      scanned++;
-      if (tmdbPage > r.total_pages) {
-        if (tmdbPage === 1 || r.total_pages < 1) break;
-        tmdbPage = 1; // the random start was past the last page
-        continue;
-      }
-      for (const m of r.results) {
-        if (seenIds.has(m.id)) continue;
-        seenIds.add(m.id);
-        if (isValid(m, plan)) found.push(m);
-        if (found.length >= TARGET) break;
-      }
-      if (tmdbPage >= r.total_pages) break; // no more pages
-      tmdbPage++;
+function globalExclude(a: Answers): number[] {
+  const allowAnimation = asList(a.genres).includes("animation") || a.who === "kids";
+  const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
+  return unique([DOCUMENTARY, TV_MOVIE, ...(allowAnimation ? [] : [ANIMATION]), ...avoid]);
+}
+
+interface Pass { params: Params; plan: Plan }
+interface Cursor { pass: number; page: number; plan: Plan; kw: number[] }
+
+function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[] {
+  const near = unique([...plan.mustHave, ...plan.anyOf]);
+  const ex = globalExclude(a);
+  const generic: Params = { ...base, "vote_count.gte": 50, "vote_average.gte": 0, "with_runtime.gte": 70, sort_by: "popularity.desc" };
+  delete generic["vote_count.lte"];
+  delete generic["with_runtime.lte"];
+  delete generic.with_genres;
+  if (near.length) generic.with_genres = near.join("|"); // any nearby genre instead of the full combination
+  generic.without_genres = ex.join(",");
+  return [
+    { params: kw.length ? { ...base, with_keywords: kw.join("|") } : base, plan },
+    { params: { ...base, "vote_count.gte": 100, "vote_average.gte": 0 }, plan },
+    { params: generic, plan: { mustHave: [], anyOf: near, exclude: ex, keywords: [] } },
+  ];
+}
+
+async function collect(
+  passes: Pass[],
+  start: { pass: number; page: number },
+  seen: Set<number>,
+  opts: { target: number; maxScan: number; allowGeneric: boolean }
+): Promise<{ found: TmdbMovie[]; next: { pass: number; page: number } | null }> {
+  const found: TmdbMovie[] = [];
+  let { pass, page } = start;
+  let scanned = 0;
+
+  while (found.length < opts.target && pass < passes.length) {
+    if (pass === GENERIC_PASS && !opts.allowGeneric) return { found, next: { pass, page: 1 } };
+    if (scanned >= opts.maxScan) return { found, next: { pass, page } };
+
+    const r = await tmdb<DiscoverPage>("/discover/movie", { ...passes[pass].params, page });
+    scanned++;
+    if (page > r.total_pages) {
+      if (page === 1 || r.total_pages < 1) { pass++; page = 1; } // this pass is used up
+      else page = 1; // the random start was past the last page
+      continue;
     }
-    if (found.length >= TARGET) break;
+    for (const m of r.results) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      if (isValid(m, passes[pass].plan)) found.push(m);
+      if (found.length >= opts.target) return { found, next: { pass, page } }; // resume on this page next time
+    }
+    if (page >= r.total_pages) { pass++; page = 1; }
+    else page++;
   }
-  return found.slice(0, TARGET);
+  return { found, next: pass < passes.length ? { pass, page } : null };
 }
 
 async function keywordIds(words: string[]): Promise<number[]> {
@@ -371,24 +399,59 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
   const strict = ranked.filter((m) => inYears(m) && isValid(m, plan));
   if (strict.length >= 8) return strict.slice(0, TARGET);
   // Too few: keep only the always-on rules (no cartoons, documentaries or skipped genres).
-  const always = { ...plan, mustHave: [], anyOf: [], exclude: plan.exclude.filter((g) => [ANIMATION, DOCUMENTARY, TV_MOVIE, ...asList(a.avoid).map((k) => AVOID[k])].includes(g)) };
+  const always = { ...plan, mustHave: [], anyOf: [], exclude: globalExclude(a) };
   return ranked.filter((m) => inYears(m) && isValid(m, always)).slice(0, TARGET);
 }
 
-async function fromAnswers(a: Answers, g: Map<number, string>): Promise<Movie[]> {
-  let plan = rulePlan(a);
+/* Cursors come back from the browser, so check them before use. */
+const ints = (v: unknown, max = 10): number[] => (Array.isArray(v) ? v.map(Number).filter(Number.isInteger).slice(0, max) : []);
+function cleanCursor(c: unknown): Cursor | null {
+  const o = c as Partial<Cursor> | null;
+  if (!o || typeof o !== "object") return null;
+  const p = (o.plan ?? {}) as Partial<Plan>;
+  const pass = Math.min(Math.max(Number(o.pass) | 0, 0), GENERIC_PASS);
+  const page = Math.min(Math.max(Number(o.page) | 0, 1), 500);
+  const plan: Plan = {
+    mustHave: ints(p.mustHave), anyOf: ints(p.anyOf), exclude: ints(p.exclude, 30), keywords: [],
+    minRating: Number.isFinite(Number(p.minRating)) && Number(p.minRating) > 0 ? Math.min(Number(p.minRating), 8.5) : undefined,
+    sortBy: p.sortBy === "vote_average.desc" || p.sortBy === "popularity.desc" ? p.sortBy : undefined,
+  };
+  return { pass, page, plan, kw: ints(o.kw, 3) };
+}
 
-  // Movie picks take priority; year, genre rules and the no-cartoons rule still apply.
-  const seeds = [String(a.loved ?? "").trim(), ...asList(a.seeds)].filter(Boolean);
-  if (seeds.length) {
-    const r = await fromSeeds(seeds, a, enforce(plan, a));
-    if (r.length) return r.map((m) => toMovie(m, g));
+async function search(
+  a: Answers,
+  g: Map<number, string>,
+  resume: { cursor: Cursor; seen: number[] } | null
+): Promise<{ movies: Movie[]; cursor: Cursor | null }> {
+  const seen = new Set<number>(resume?.seen ?? []);
+  let plan: Plan;
+  let kw: number[];
+  let start: { pass: number; page: number };
+
+  if (resume) {
+    ({ plan, kw } = resume.cursor);
+    start = { pass: resume.cursor.pass, page: resume.cursor.page };
+  } else {
+    plan = rulePlan(a);
+    kw = [];
+
+    // Movie picks take priority; year, genre rules and the no-cartoons rule still apply.
+    const seeds = [String(a.loved ?? "").trim(), ...asList(a.seeds)].filter(Boolean);
+    if (seeds.length) {
+      plan = enforce(plan, a);
+      const r = await fromSeeds(seeds, a, plan);
+      if (r.length) return { movies: r.map((m) => toMovie(m, g)), cursor: { pass: 0, page: 1, plan, kw } };
+    }
+
+    const explicit = asList(a.genres).length > 0 || a.who === "kids";
+    const ai = await geminiPlan(a, g, explicit);
+    if (ai) plan = mergePlan(plan, ai);
+    plan = enforce(plan, a);
+    if (plan.keywords.length) kw = await keywordIds(plan.keywords);
+    const startPage = a.novelty === "familiar" ? 1 : 1 + Math.floor(Math.random() * 3); // variety between searches
+    start = { pass: 0, page: startPage };
   }
-
-  const explicit = asList(a.genres).length > 0 || a.who === "kids";
-  const ai = await geminiPlan(a, g, explicit);
-  if (ai) plan = mergePlan(plan, ai);
-  plan = enforce(plan, a);
 
   const params = baseParams(a, plan);
   const actor = String(a.actor ?? "").trim();
@@ -396,10 +459,13 @@ async function fromAnswers(a: Answers, g: Map<number, string>): Promise<Movie[]>
     const s = await tmdb<{ results: { id: number }[] }>("/search/person", { query: actor });
     if (s.results[0]) params.with_cast = s.results[0].id;
   }
-  const kw = plan.keywords.length ? await keywordIds(plan.keywords) : [];
-  const startPage = a.novelty === "familiar" ? 1 : 1 + Math.floor(Math.random() * 3); // variety between searches
-  const movies = await collect(plan, params, kw, startPage);
-  return movies.map((m) => toMovie(m, g));
+
+  const { found, next } = await collect(buildPasses(a, plan, params, kw), start, seen, {
+    target: TARGET,
+    maxScan: resume ? 10 : MAX_PAGES,
+    allowGeneric: !!resume, // the generic fallback only runs for "show more"
+  });
+  return { movies: found.map((m) => toMovie(m, g)), cursor: next ? { ...next, plan, kw } : null };
 }
 
 export async function POST(request: Request) {
@@ -429,8 +495,14 @@ export async function POST(request: Request) {
       });
     }
     const g = await genreMap();
-    const movies = await withRatings(await fromAnswers(body.answers ?? {}, g));
-    return Response.json({ movies });
+    const cursor = body.mode === "more" ? cleanCursor(body.cursor) : null;
+    const result = await search(
+      body.answers ?? {},
+      g,
+      cursor ? { cursor, seen: ints(body.seen, 600) } : null
+    );
+    const movies = await withRatings(result.movies);
+    return Response.json({ movies, cursor: result.cursor });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });
   }

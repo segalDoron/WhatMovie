@@ -1,15 +1,25 @@
 import type { Answers, Movie } from "./types";
 
-export async function fetchMovies(answers: Answers): Promise<Movie[]> {
+/** Opaque position in the search ("where to continue"). Sent back to the server for "show more". */
+export type Cursor = unknown;
+export interface SearchResult { movies: Movie[]; cursor: Cursor | null }
+
+async function search(body: object): Promise<SearchResult> {
   const res = await fetch("/api/movies", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "answers", answers }),
+    body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? "Could not load movies");
-  return data.movies as Movie[];
+  return { movies: data.movies as Movie[], cursor: data.cursor ?? null };
 }
+
+export const fetchMovies = (answers: Answers) => search({ mode: "answers", answers });
+
+/** The next batch: continues from the cursor and skips movies already shown. */
+export const fetchMore = (answers: Answers, cursor: Cursor, seen: number[]) =>
+  search({ mode: "more", answers, cursor, seen });
 
 export interface CastMember { name: string; character: string }
 const castCache = new Map<number, CastMember[]>();
