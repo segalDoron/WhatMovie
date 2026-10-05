@@ -2,7 +2,7 @@ import type { Favorite } from "./favorites";
 import { Heart, Star } from "./Icons";
 
 interface Props {
-  movie: Favorite;
+  movie: Favorite & { providers?: string[] };
   onOpen: () => void;
   onRemove?: () => void; // favorites list only: heart in the top right corner
   tabIndex?: number;
@@ -21,6 +21,12 @@ export default function MovieRow({ movie, onOpen, onRemove, tabIndex }: Props) {
             {movie.rating && <span className="cert" aria-label={`Rated ${movie.rating}`}>{movie.rating}</span>}
           </p>
           <p className="score"><Star /> {movie.score.toFixed(1)}</p>
+          {!!movie.providers?.length && (
+            <p className="providers" aria-label={`Streaming on ${movie.providers.join(", ")}`}>
+              {movie.providers.slice(0, 3).map((n) => <span key={n} className="tag">{n}</span>)}
+              {movie.providers.length > 3 && <span className="tag">+{movie.providers.length - 3}</span>}
+            </p>
+          )}
         </div>
       </button>
       {onRemove && (
