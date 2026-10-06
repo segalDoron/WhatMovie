@@ -5,7 +5,7 @@ import { favorites } from "./favorites";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
-  closeRef: RefObject<HTMLButtonElement | null>;
+  closeRef?: RefObject<HTMLButtonElement | null>;
   items: Favorite[];
   loading: boolean;
   error: string;
