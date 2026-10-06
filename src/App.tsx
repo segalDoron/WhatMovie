@@ -3,10 +3,14 @@ import QuestionForm from "./QuestionForm";
 import Loading from "./Loading";
 import ResultsList from "./ResultsList";
 import MovieDetail from "./MovieDetail";
-import FavoritesSheet from "./FavoritesSheet";
-import FavoritesDrawer from "./FavoritesDrawer";
-import { Heart, ChevronRight } from "./Icons";
+import BottomSheet from "./BottomSheet";
+import SideDrawer from "./SideDrawer";
+import FavoritesContent from "./FavoritesContent";
+import HistoryContent from "./HistoryContent";
+import { Heart, ChevronRight, Clock } from "./Icons";
 import { useFavorites } from "./useFavorites";
+import { useSearchHistory } from "./useSearchHistory";
+import { searchHistory, type SavedSearch } from "./searchHistory";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
 import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
@@ -26,6 +30,7 @@ const pushNav = (s: Omit<NavState, "idx">) => history.pushState({ ...s, idx: cur
 const replaceNav = (s: Omit<NavState, "idx">) => history.replaceState({ ...s, idx: curIdx() } as NavState, "");
 
 type Source = "results" | "favorites";
+type Panel = "favorites" | "history"; // what the bottom sheet (mobile) / side drawer (desktop) is showing
 
 // `inert` removes a hidden layer from tab order and screen readers.
 const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
@@ -44,7 +49,7 @@ function useTheme(): [Theme, () => void] {
 
 /*
  * History stack: form -> (loading, replaced by) results -> detail
- * The favorites sheet / drawer is plain UI state, not a history entry: it stays open while you move between
+ * The favorites / recent searches sheet and drawer are plain UI state, not a history entry: it stays open while you move between
  * pages and closes only with its close button, the dimmed area outside it, or Escape (closing never changes the page).
  * UI back buttons call history.back(), so the native back button and the UI always walk the same stack.
  * popstate is the single place that updates the view.
@@ -52,6 +57,7 @@ function useTheme(): [Theme, () => void] {
 export default function App() {
   const [theme, toggleTheme] = useTheme();
   const favorites = useFavorites();
+  const searches = useSearchHistory();
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
   const [cursor, setCursor] = useState<Cursor | null>(null); // where "show more" continues; null = nothing more to load
@@ -60,10 +66,12 @@ export default function App() {
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
-  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom sheet (plain UI state)
-  const [drawerOpen, setDrawerOpen] = useState(false); // desktop drawer (plain UI state, stays open until closed)
+  const [panel, setPanel] = useState<Panel | null>(null); // which list is open (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
-  const sheetShown = sheetOpen && !isDesktop;
+  const sheetShown = panel !== null && !isDesktop; // mobile: bottom sheet
+  const drawerShown = panel !== null && isDesktop; // desktop: side drawer
+  const lastPanel = useRef<Panel>("favorites"); // keeps the content visible while the panel slides out
+  if (panel) lastPanel.current = panel;
   const [favLoading, setFavLoading] = useState(false);
   const [favError, setFavError] = useState("");
   const [error, setError] = useState("");
@@ -78,6 +86,8 @@ export default function App() {
   const openRequest = useRef(0); // ignore a details page whose images arrive after the user moved on
   const detailSource = useRef(new Map<number, Source>()); // which list each opened movie came from (for "next")
   const detailRef = useRef<HTMLElement>(null);
+  const pendingSearch = useRef<Answers | null>(null); // a search to run as soon as we are back on the form
+  const submitRef = useRef<(answers: Answers) => void>(() => {});
 
   useEffect(() => {
     detailRef.current?.scrollTo({ top: 0 }); // a new movie always starts at the top
@@ -113,6 +123,11 @@ export default function App() {
         moreToken.current++;
         setLoadingMore(false);
         setView("form");
+        const pending = pendingSearch.current;
+        if (pending) {
+          pendingSearch.current = null;
+          submitRef.current(pending);
+        }
       }
     };
 
@@ -123,10 +138,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (isDesktop) setSheetOpen(false); // the sheet only exists on mobile
-  }, [isDesktop]);
-
   const goBack = useCallback(() => history.back(), []);
   // Jump straight back to the search form, however deep we are.
   const startOver = useCallback(() => {
@@ -136,6 +147,7 @@ export default function App() {
 
   const submit: React.ComponentProps<typeof QuestionForm>["onSubmit"] = async (answers) => {
     const id = ++requestId.current;
+    searchHistory.add(answers); // keeps the last 5 searches
     pushNav({ view: "loading" });
     setView("loading");
     try {
@@ -155,6 +167,17 @@ export default function App() {
       replaceNav({ view: "error" });
       setView("error");
     }
+  };
+
+  submitRef.current = submit;
+
+  // Run a saved search again through the regular flow. From any other screen, first go back to the form.
+  const rerun = (s: SavedSearch) => {
+    setPanel(null);
+    if (curIdx() > 0) {
+      pendingSearch.current = s.answers;
+      startOver();
+    } else submit(s.answers);
   };
 
   const loadMore = async () => {
@@ -218,8 +241,9 @@ export default function App() {
     }
   };
 
-  // Heart in the mobile menu bar: opens / closes the sheet without leaving the current page.
-  const toggleSheet = () => setSheetOpen((o) => !o);
+  // Menu bar / top buttons: open a list, switch to the other one, or close it, without leaving the current page.
+  const togglePanel = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
+  const closePanel = () => setPanel(null);
 
   // A favorite only stores the basics, so fetch the full details from TMDB first (with a loader).
   const openFavorite = async (fav: Favorite) => {
@@ -238,8 +262,17 @@ export default function App() {
     }
   };
 
+  const shownPanel = panel ?? lastPanel.current;
+  const panelLabel = shownPanel === "history" ? "Recent searches" : "Favorites";
+  const panelBody =
+    shownPanel === "history" ? (
+      <HistoryContent items={searches} onClose={closePanel} onPick={rerun} onRemove={(id) => searchHistory.remove(id)} />
+    ) : (
+      <FavoritesContent items={favorites} loading={favLoading} error={favError} onClose={closePanel} onPick={openFavorite} />
+    );
+
   return (
-    <div className={`app ${isDesktop && drawerOpen ? "drawer-open" : ""}`}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -247,15 +280,26 @@ export default function App() {
           </button>
 
           {isDesktop && (
-            <button
-              className="fav-top"
-              onClick={() => setDrawerOpen((o) => !o)}
-              aria-pressed={drawerOpen}
-              aria-label={`${drawerOpen ? "Close" : "Open"} favorites (${favorites.length})`}
-            >
-              <Heart filled={drawerOpen || favorites.length > 0} />
-              {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
-            </button>
+            <>
+              <button
+                className="hist-top"
+                onClick={() => togglePanel("history")}
+                aria-pressed={panel === "history"}
+                aria-label={`${panel === "history" ? "Close" : "Open"} recent searches (${searches.length})`}
+              >
+                <Clock />
+                {searches.length > 0 && <span className="badge" aria-hidden="true">{searches.length}</span>}
+              </button>
+              <button
+                className="fav-top"
+                onClick={() => togglePanel("favorites")}
+                aria-pressed={panel === "favorites"}
+                aria-label={`${panel === "favorites" ? "Close" : "Open"} favorites (${favorites.length})`}
+              >
+                <Heart filled={panel === "favorites" || favorites.length > 0} />
+                {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
+              </button>
+            </>
           )}
 
           {detailOpen && (
@@ -305,15 +349,26 @@ export default function App() {
           )}
         </div>
 
-        {/* Mobile only: menu bar on every screen, above the sheet and the details page. */}
+        {/* Mobile only: menu bar on every screen, above the sheet and the details page. Buttons are spread evenly. */}
         {!isDesktop && (
           <nav className="menu" aria-label="Main menu">
             <button
               type="button"
               className="menu-btn"
-              onClick={toggleSheet}
+              onClick={() => togglePanel("history")}
               disabled={view === "loading"}
-              aria-expanded={sheetOpen}
+              aria-expanded={panel === "history"}
+              aria-label={`Recent searches (${searches.length})`}
+            >
+              <Clock />
+              {searches.length > 0 && <span className="badge" aria-hidden="true">{searches.length}</span>}
+            </button>
+            <button
+              type="button"
+              className="menu-btn"
+              onClick={() => togglePanel("favorites")}
+              disabled={view === "loading"}
+              aria-expanded={panel === "favorites"}
               aria-label={`Favorites (${favorites.length})`}
             >
               <Heart filled={favorites.length > 0} />
@@ -324,23 +379,9 @@ export default function App() {
       </div>
 
       {isDesktop ? (
-        <FavoritesDrawer
-          open={drawerOpen}
-          items={favorites}
-          loading={favLoading}
-          error={favError}
-          onClose={() => setDrawerOpen(false)}
-          onPick={openFavorite}
-        />
+        <SideDrawer open={panel !== null} label={panelLabel}>{panelBody}</SideDrawer>
       ) : (
-        <FavoritesSheet
-          open={sheetOpen}
-          items={favorites}
-          loading={favLoading}
-          error={favError}
-          onClose={() => setSheetOpen(false)}
-          onPick={openFavorite}
-        />
+        <BottomSheet open={panel !== null} label={panelLabel} onClose={closePanel}>{panelBody}</BottomSheet>
       )}
     </div>
   );

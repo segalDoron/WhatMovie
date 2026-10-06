@@ -1,4 +1,3 @@
-import type { Ref } from "react";
 import type { Favorite } from "./favorites";
 import MovieRow from "./MovieRow";
 import { favorites } from "./favorites";
@@ -10,16 +9,15 @@ export interface FavoritesContentProps {
   error: string;
   onClose: () => void;
   onPick: (f: Favorite) => void;
-  closeRef?: Ref<HTMLButtonElement>;
 }
 
 /** Header, scrollable list and loader. Shared by the mobile sheet and the desktop drawer. */
-export default function FavoritesContent({ items, loading, error, onClose, onPick, closeRef }: FavoritesContentProps) {
+export default function FavoritesContent({ items, loading, error, onClose, onPick }: FavoritesContentProps) {
   return (
     <>
       <header className="sheet-head">
         <h2>Favorites</h2>
-        <button ref={closeRef} className="x" onClick={onClose} aria-label="Close favorites">
+        <button className="x" onClick={onClose} aria-label="Close favorites">
           <Close />
         </button>
       </header>
