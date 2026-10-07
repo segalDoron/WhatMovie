@@ -5,9 +5,11 @@ import ResultsList from "./ResultsList";
 import MovieDetail from "./MovieDetail";
 import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
+import ProfileModal from "./ProfileModal";
+import { users } from "./users";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
-import { Heart, ChevronRight, Clock } from "./Icons";
+import { Heart, ChevronRight, Clock, User } from "./Icons";
 import { useFavorites } from "./useFavorites";
 import { useSearchHistory } from "./useSearchHistory";
 import { searchHistory, type SavedSearch } from "./searchHistory";
@@ -66,6 +68,8 @@ export default function App() {
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
+  // "Who am I?" modal: open on load when there are no users yet.
+  const [profileOpen, setProfileOpen] = useState(() => users.getAll().length === 0);
   const [panel, setPanel] = useState<Panel | null>(null); // which list is open (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const sheetShown = panel !== null && !isDesktop; // mobile: bottom sheet
@@ -88,6 +92,10 @@ export default function App() {
   const detailRef = useRef<HTMLElement>(null);
   const pendingSearch = useRef<Answers | null>(null); // a search to run as soon as we are back on the form
   const submitRef = useRef<(answers: Answers) => void>(() => {});
+
+  useEffect(() => {
+    users.ensureActive(); // users exist but none is active: the first one becomes active
+  }, []);
 
   useEffect(() => {
     detailRef.current?.scrollTo({ top: 0 }); // a new movie always starts at the top
@@ -272,7 +280,7 @@ export default function App() {
     );
 
   return (
-    <div className={`app ${drawerShown ? "drawer-open" : ""}`}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(profileOpen)}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -282,13 +290,20 @@ export default function App() {
           {isDesktop && (
             <>
               <button
+                className="profile-top"
+                onClick={() => setProfileOpen(true)}
+                aria-haspopup="dialog"
+                aria-label="Profile"
+              >
+                <User />
+              </button>
+              <button
                 className="hist-top"
                 onClick={() => togglePanel("history")}
                 aria-pressed={panel === "history"}
-                aria-label={`${panel === "history" ? "Close" : "Open"} recent searches (${searches.length})`}
+                aria-label={panel === "history" ? "Close recent searches" : "Open recent searches"}
               >
                 <Clock />
-                {searches.length > 0 && <span className="badge" aria-hidden="true">{searches.length}</span>}
               </button>
               <button
                 className="fav-top"
@@ -358,10 +373,9 @@ export default function App() {
               onClick={() => togglePanel("history")}
               disabled={view === "loading"}
               aria-expanded={panel === "history"}
-              aria-label={`Recent searches (${searches.length})`}
+              aria-label="Recent searches"
             >
               <Clock />
-              {searches.length > 0 && <span className="badge" aria-hidden="true">{searches.length}</span>}
             </button>
             <button
               type="button"
@@ -374,6 +388,9 @@ export default function App() {
               <Heart filled={favorites.length > 0} />
               {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
             </button>
+            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label="Profile">
+              <User />
+            </button>
           </nav>
         )}
       </div>
@@ -383,6 +400,8 @@ export default function App() {
       ) : (
         <BottomSheet open={panel !== null} label={panelLabel} onClose={closePanel}>{panelBody}</BottomSheet>
       )}
+
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

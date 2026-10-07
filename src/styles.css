@@ -232,7 +232,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .err { color: var(--accent); font-weight: 700; }
 
 /* ---------- Larger screens: heart button next to the theme button + right-side drawer ---------- */
-.fav-top, .hist-top {
+.fav-top, .hist-top, .profile-top {
   position: absolute; top: 12px; right: calc(max(0px, (100% - var(--col)) / 2) + 72px); z-index: 30;
   width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface);
   display: grid; place-items: center; color: var(--accent); transition: background .2s, color .2s, border-color .2s;
@@ -250,9 +250,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .drawer-inner { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; border-left: 1.5px solid var(--line); }
 
 /* Theme + heart buttons slide left to stay clear of the open drawer */
-.theme, .fav-top, .hist-top, .next-top { transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s; }
+.theme, .fav-top, .hist-top, .profile-top, .next-top { transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s; }
 .app.drawer-open .theme { right: max(calc(max(0px, (100% - var(--col)) / 2) + 24px), 396px); }
-.app.drawer-open .fav-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 72px), 444px); }
+.app.drawer-open .profile-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 72px), 444px); }
+.app.drawer-open .fav-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 120px), 492px); }
 
 /* ---------- Age rating, remove heart ---------- */
 .cert { margin-left: 8px; padding: 1px 7px; border: 1.5px solid var(--muted); border-radius: 6px; font-size: .75rem; font-weight: 700; color: var(--muted); vertical-align: 1px; }
@@ -291,6 +292,7 @@ li.has-remove { position: relative; }
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 12px 12px 18px; }
 .modal-head h3 { margin: 0; font-size: 1.05rem; }
+
 .video {
   aspect-ratio: 16 / 9;
   background: #000;
@@ -330,8 +332,8 @@ li.has-remove { position: relative; }
   display: grid; place-items: center; color: var(--ink);
 }
 .next-top:disabled { opacity: .4; cursor: not-allowed; }
-@media (min-width: 768px) { .next-top { right: calc(max(0px, (100% - var(--col)) / 2) + 168px); } }
-.app.drawer-open .next-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 168px), 540px); }
+@media (min-width: 768px) { .next-top { right: calc(max(0px, (100% - var(--col)) / 2) + 216px); } }
+.app.drawer-open .next-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 216px), 588px); }
 
 /* ---------- Show more ---------- */
 .more-row { width: 100%; max-width: var(--col); margin: 0 auto; padding: 4px 16px 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 72px; }
@@ -344,8 +346,9 @@ li.has-remove { position: relative; }
 .tag { padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.4; color: var(--ink); background: color-mix(in srgb, var(--primary) 22%, transparent); }
 
 /* ---------- Recent searches ---------- */
-.hist-top { right: calc(max(0px, (100% - var(--col)) / 2) + 120px); }
-.app.drawer-open .hist-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 120px), 492px); }
+.fav-top { right: calc(max(0px, (100% - var(--col)) / 2) + 120px); }
+.hist-top { right: calc(max(0px, (100% - var(--col)) / 2) + 168px); }
+.app.drawer-open .hist-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 168px), 540px); }
 .search-card { align-items: center; }
 .search-icon { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--ink); }
 .search-card .meta h2 { font-size: 1.05rem; }
@@ -353,3 +356,39 @@ li.has-remove { position: relative; }
 .remove.dismiss { color: var(--muted); }
 .remove.dismiss:hover { color: var(--accent); }
 .empty-state svg { color: var(--muted); }
+
+/* ---------- Profile modal ("Who am I?") ---------- */
+.pm-backdrop {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px;
+  background: rgba(5, 25, 32, .6); opacity: 0; visibility: hidden;
+  transition: opacity .3s, visibility 0s .3s;
+}
+.pm-backdrop.open { opacity: 1; visibility: visible; transition-delay: 0s; }
+.pm {
+  width: min(100%, 420px); max-height: 90dvh; overflow: hidden; border-radius: 20px;
+  background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
+  opacity: 0; transform: translateY(18px) scale(.96);
+  transition: opacity .3s, transform .35s cubic-bezier(.2, .8, .2, 1);
+}
+.pm-backdrop.open .pm { opacity: 1; transform: none; }
+.pm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 6px 22px; }
+.pm-head h2 { font-size: 1.4rem; font-weight: 800; }
+.pm-body { display: flex; flex-direction: column; gap: 16px; padding: 10px 22px 24px; }
+.pm-name { margin: 0; font-family: "Bricolage Grotesque", "DM Sans", sans-serif; font-size: 1.6rem; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+.pm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.pm-actions > button { flex: 1 1 140px; }
+.secondary {
+  padding: 14px 20px; border-radius: var(--radius); border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); font-weight: 700; font-size: 1.05rem; transition: border-color .15s, transform .12s;
+}
+.secondary:hover { border-color: var(--primary); }
+.secondary:active { transform: scale(.98); }
+.pm-list { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 8px; max-height: 50dvh; overflow-y: auto; }
+.pm-user {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px;
+  border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); text-align: left; font-weight: 700;
+  transition: border-color .15s, background .15s;
+}
+.pm-user:hover { border-color: var(--primary); }
+.pm-user[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); }
+.pm-user-name { overflow-wrap: anywhere; }
