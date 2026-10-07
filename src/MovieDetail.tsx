@@ -4,10 +4,9 @@ import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play } from "./Icons";
 import { fetchCast, fetchTrailer, type CastMember } from "./api";
 import { favorites } from "./favorites";
 import { useFavorites } from "./useFavorites";
+import { votes } from "./votes";
+import { useVotes } from "./useVotes";
 import TrailerModal from "./TrailerModal";
-
-interface Reaction { like: boolean; dislike: boolean }
-const NONE: Reaction = { like: false, dislike: false };
 
 interface Props {
   movie: Movie | null;
@@ -21,7 +20,7 @@ export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Pr
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const [reactions, setReactions] = useState<Record<number, Reaction>>({}); // like/dislike are UI only for now
+  const voted = useVotes(); // like / dislike, saved in localStorage under the "vote" key
   const favs = useFavorites();
   const isFav = !!movie && favs.some((f) => f.id === movie.id);
 
@@ -41,17 +40,8 @@ export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Pr
     return () => { live = false; };
   }, [movie?.id]);
 
-  const r = (movie && reactions[movie.id]) || NONE;
-  const toggle = (k: keyof Reaction) => {
-    if (!movie) return;
-    setReactions((all) => {
-      const cur = all[movie.id] ?? NONE;
-      const next = { ...cur, [k]: !cur[k] };
-      if (k === "like" && next.like) next.dislike = false;
-      if (k === "dislike" && next.dislike) next.like = false;
-      return { ...all, [movie.id]: next };
-    });
-  };
+  const liked = !!movie && voted.like.some((m) => m.id === movie.id);
+  const disliked = !!movie && voted.dislike.some((m) => m.id === movie.id);
   const t = tabbable ? 0 : -1;
 
   return (
@@ -70,11 +60,11 @@ export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Pr
 
           <div className="actions">
             <div className="reactions" role="group" aria-label="Your reaction">
-              <button className="react like" aria-pressed={r.like} aria-label="Like" tabIndex={t} onClick={() => toggle("like")}>
-                <ThumbUp filled={r.like} />
+              <button className="react like" aria-pressed={liked} aria-label="Like" tabIndex={t} onClick={() => votes.toggle("like", movie)}>
+                <ThumbUp filled={liked} />
               </button>
-              <button className="react dislike" aria-pressed={r.dislike} aria-label="Dislike" tabIndex={t} onClick={() => toggle("dislike")}>
-                <ThumbDown filled={r.dislike} />
+              <button className="react dislike" aria-pressed={disliked} aria-label="Dislike" tabIndex={t} onClick={() => votes.toggle("dislike", movie)}>
+                <ThumbDown filled={disliked} />
               </button>
               <button
                 className="react heart"
