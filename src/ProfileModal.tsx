@@ -7,7 +7,7 @@ import { useUsers } from "./useUsers";
 type View = "name" | "new" | "change";
 
 /** Add a new user. Cancel goes back to the name step (only when there is a user to go back to). */
-function NewUserForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
+function NewUserForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel?: () => void }) {
   const [name, setName] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
@@ -16,7 +16,7 @@ function NewUserForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () =
     e.preventDefault();
     if (!name.trim()) return;
     users.add(name);
-    onDone();
+    onSuccess(); // go back to name step, show the new user
   };
 
   return (
@@ -47,7 +47,7 @@ function NewUserForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () =
 }
 
 /** Pick a user. Clicking a row only selects it; "Select" makes it the active user. The trash icon removes a user. */
-function UserList({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+function UserList({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
   const list = useUsers();
   const [selected, setSelected] = useState<number | null>(() => users.getActive()?.id ?? null);
 
@@ -59,7 +59,7 @@ function UserList({ onDone, onCancel }: { onDone: () => void; onCancel: () => vo
 
   const select = () => {
     if (selected !== null) users.setActive(selected);
-    onDone();
+    onSuccess(); // go back to name step, show the newly selected user
   };
 
   return (
@@ -69,24 +69,26 @@ function UserList({ onDone, onCancel }: { onDone: () => void; onCancel: () => vo
           const isSelected = selected === u.id;
           return (
             <li key={u.id} className="pm-row">
-              <button
-                type="button"
-                className="pm-user"
-                aria-pressed={isSelected}
-                aria-label={`Choose ${u.name}`}
-                onClick={() => setSelected(u.id)}
-              >
-                <span className="pm-user-name">{u.name}</span>
-                <SelectIcon filled={isSelected} />
-              </button>
-              <button
-                type="button"
-                className="pm-trash"
-                aria-label={`Remove ${u.name}`}
-                onClick={() => remove(u.id)}
-              >
-                <Trash />
-              </button>
+              <div className="pm-user-box">
+                <button
+                  type="button"
+                  className="pm-user"
+                  aria-pressed={isSelected}
+                  aria-label={`Choose ${u.name}`}
+                  onClick={() => setSelected(u.id)}
+                >
+                  <span className="pm-user-name">{u.name}</span>
+                  <SelectIcon filled={isSelected} />
+                </button>
+                <button
+                  type="button"
+                  className="pm-trash"
+                  aria-label={`Remove ${u.name}`}
+                  onClick={() => remove(u.id)}
+                >
+                  <Trash />
+                </button>
+              </div>
             </li>
           );
         })}
@@ -114,9 +116,14 @@ function Body({ onDone }: { onDone: () => void }) {
   }, [view]);
 
   if (view === "new" || !active) {
-    return <NewUserForm onDone={onDone} onCancel={list.length ? () => setView("name") : undefined} />;
+    return (
+      <NewUserForm
+        onSuccess={() => setView("name")}
+        onCancel={list.length ? () => setView("name") : undefined}
+      />
+    );
   }
-  if (view === "change") return <UserList onDone={onDone} onCancel={() => setView("name")} />;
+  if (view === "change") return <UserList onSuccess={() => setView("name")} onCancel={() => setView("name")} />;
   return (
     <div className="pm-body">
       <p className="pm-name">{active.name}</p>
