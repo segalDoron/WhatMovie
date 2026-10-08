@@ -72,7 +72,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--surface); color: var(--ink); font: inherit;
 }
 .primary {
-  padding: 14px 20px; border: 0; border-radius: var(--radius); background: var(--accent);
+  padding: 8px 16px; border: 0; border-radius: var(--radius); background: var(--accent);
   color: #fff; font-weight: 700; font-size: 1.05rem; box-shadow: 0 6px 0 rgba(0,0,0,.12); transition: transform .12s, box-shadow .12s;
 }
 .primary:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(0,0,0,.12); }
@@ -378,7 +378,7 @@ li.has-remove { position: relative; }
 .pm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .pm-actions > button { flex: 1 1 140px; }
 .secondary {
-  padding: 14px 20px; border-radius: var(--radius); border: 1.5px solid var(--line); background: var(--surface);
+  padding: 8px 16px; border-radius: var(--radius); border: 1.5px solid var(--line); background: var(--surface);
   color: var(--ink); font-weight: 700; font-size: 1.05rem; transition: border-color .15s, transform .12s;
 }
 .secondary:hover { border-color: var(--primary); }
@@ -392,3 +392,32 @@ li.has-remove { position: relative; }
 .pm-user:hover { border-color: var(--primary); }
 .pm-user[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); }
 .pm-user-name { overflow-wrap: anywhere; }
+
+/* ---------- Profile modal, round 2 (overrides the earlier .pm-actions / .pm-list rules) ---------- */
+.pm-name { margin-bottom: 48px; }
+.pm-input { margin-bottom: 48px; }
+.pm-footer { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 10px; }
+.pm-footer > button { flex: 0 0 auto; width: auto; }
+.pm-list {
+  margin: 0 0 32px; padding: 4px; list-style: none; display: flex; flex-direction: column; gap: 8px;
+  max-height: 256px; /* 4 rows on mobile */
+  overflow-y: auto; overscroll-behavior: contain;
+}
+@media (min-width: 768px) { .pm-list { max-height: 512px; } /* 8 rows on desktop */ }
+.pm-row { display: flex; align-items: center; height: 56px; flex: none; }
+.pm-user-box {
+  display: flex; align-items: center; flex: 1; height: 100%; border-radius: 12px;
+  border: 1.5px solid var(--line); background: var(--surface); transition: border-color .15s, background .15s;
+}
+.pm-user-box:has(.pm-user:hover) { border-color: var(--primary); }
+.pm-user-box:has(.pm-user[aria-pressed="true"]) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); }
+.pm-user {
+  flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px;
+  height: 100%; border: 0; background: transparent; text-align: left; font-weight: 700; transition: none;
+}
+.pm-trash {
+  flex: none; width: 40px; height: 40px; margin-right: 4px; border-radius: 50%; border: 0; background: transparent;
+  color: var(--muted); display: grid; place-items: center; transition: background .15s, color .15s;
+}
+.pm-trash:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pm-trash:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }

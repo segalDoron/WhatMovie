@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Close, SelectIcon } from "./Icons";
+import { Close, SelectIcon, Trash } from "./Icons";
 import { users } from "./users";
 import { useUsers } from "./useUsers";
 
-type View = "new" | "profile" | "change";
+type View = "name" | "new" | "change";
 
-/** Add a new user: the new user becomes the active one. */
-function NewUserForm({ onDone }: { onDone: () => void }) {
+/** Add a new user. Cancel goes back to the name step (only when there is a user to go back to). */
+function NewUserForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel?: () => void }) {
   const [name, setName] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
@@ -16,14 +16,14 @@ function NewUserForm({ onDone }: { onDone: () => void }) {
     e.preventDefault();
     if (!name.trim()) return;
     users.add(name);
-    onDone();
+    onSuccess(); // go back to name step, show the new user
   };
 
   return (
     <form className="pm-body" onSubmit={submit}>
       <input
         ref={input}
-        className="text"
+        className="text pm-input"
         type="text"
         value={name}
         maxLength={30}
@@ -32,65 +32,107 @@ function NewUserForm({ onDone }: { onDone: () => void }) {
         aria-label="What is your name"
         onChange={(e) => setName(e.target.value)}
       />
-      <button className="primary" type="submit" disabled={!name.trim()}>
-        Add me
-      </button>
+      <div className="pm-footer">
+        {onCancel && (
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+        <button className="primary" type="submit" disabled={!name.trim()}>
+          Add me
+        </button>
+      </div>
     </form>
   );
 }
 
-/** Pick which user is active. */
-function UserList({ onDone }: { onDone: () => void }) {
+/** Pick a user. Clicking a row only selects it; "Select" makes it the active user. The trash icon removes a user. */
+function UserList({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
   const list = useUsers();
-  const first = useRef<HTMLButtonElement>(null);
-  useEffect(() => first.current?.focus(), []);
+  const [selected, setSelected] = useState<number | null>(() => users.getActive()?.id ?? null);
+
+  const remove = (id: number) => {
+    users.remove(id);
+    // If the selected user was removed, fall back to whoever is active now.
+    setSelected((prev) => (prev === id ? users.getActive()?.id ?? null : prev));
+  };
+
+  const select = () => {
+    if (selected !== null) users.setActive(selected);
+    onSuccess(); // go back to name step, show the newly selected user
+  };
 
   return (
     <div className="pm-body">
       <ul className="pm-list">
-        {list.map((u, i) => (
-          <li key={u.id}>
-            <button
-              ref={i === 0 ? first : undefined}
-              className="pm-user"
-              aria-pressed={u.isActive}
-              aria-label={`Select ${u.name}`}
-              onClick={() => {
-                users.setActive(u.id);
-                onDone();
-              }}
-            >
-              <span className="pm-user-name">{u.name}</span>
-              <SelectIcon filled={u.isActive} />
-            </button>
-          </li>
-        ))}
+        {list.map((u) => {
+          const isSelected = selected === u.id;
+          return (
+            <li key={u.id} className="pm-row">
+              <div className="pm-user-box">
+                <button
+                  type="button"
+                  className="pm-user"
+                  aria-pressed={isSelected}
+                  aria-label={`Choose ${u.name}`}
+                  onClick={() => setSelected(u.id)}
+                >
+                  <span className="pm-user-name">{u.name}</span>
+                  <SelectIcon filled={isSelected} />
+                </button>
+                <button
+                  type="button"
+                  className="pm-trash"
+                  aria-label={`Remove ${u.name}`}
+                  onClick={() => remove(u.id)}
+                >
+                  <Trash />
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
+      <div className="pm-footer">
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="primary" onClick={select} disabled={selected === null}>
+          Select
+        </button>
+      </div>
     </div>
   );
 }
 
 function Body({ onDone }: { onDone: () => void }) {
   const list = useUsers();
-  const [view, setView] = useState<View>(() => (users.getAll().length ? "profile" : "new"));
+  const [view, setView] = useState<View>(() => (users.getAll().length ? "name" : "new"));
   const addNew = useRef<HTMLButtonElement>(null);
   const active = list.find((u) => u.isActive) ?? list[0];
 
   useEffect(() => {
-    if (view === "profile") addNew.current?.focus();
+    if (view === "name") addNew.current?.focus();
   }, [view]);
 
-  if (view === "new" || !active) return <NewUserForm onDone={onDone} />;
-  if (view === "change") return <UserList onDone={onDone} />;
+  if (view === "new" || !active) {
+    return (
+      <NewUserForm
+        onSuccess={() => setView("name")}
+        onCancel={list.length ? () => setView("name") : undefined}
+      />
+    );
+  }
+  if (view === "change") return <UserList onSuccess={() => setView("name")} onCancel={() => setView("name")} />;
   return (
     <div className="pm-body">
       <p className="pm-name">{active.name}</p>
-      <div className="pm-actions">
-        <button ref={addNew} className="primary" onClick={() => setView("new")}>
-          Add new
-        </button>
+      <div className="pm-footer">
         <button className="secondary" onClick={() => setView("change")}>
           Change user
+        </button>
+        <button ref={addNew} className="primary" onClick={() => setView("new")}>
+          Add new
         </button>
       </div>
     </div>
@@ -104,7 +146,7 @@ interface Props { open: boolean; onClose: () => void }
  * It stays mounted so it can fade and scale in and out.
  */
 export default function ProfileModal({ open, onClose }: Props) {
-  // Every opening gets a fresh body (so the right view shows), while the old one stays visible during the fade-out.
+  // Every opening gets a fresh body (so the right step shows), while the old one stays visible during the fade-out.
   const [session, setSession] = useState(0);
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
