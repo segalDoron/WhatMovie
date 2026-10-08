@@ -392,3 +392,23 @@ li.has-remove { position: relative; }
 .pm-user:hover { border-color: var(--primary); }
 .pm-user[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); }
 .pm-user-name { overflow-wrap: anywhere; }
+
+/* ---------- Profile modal, round 2 (overrides the earlier .pm-actions / .pm-list rules) ---------- */
+.pm-name { margin-bottom: 48px; }
+.pm-input { margin-bottom: 48px; }
+.pm-footer { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 10px; }
+.pm-footer > button { flex: 0 0 auto; width: auto; }
+.pm-list {
+  margin: 0 0 32px; padding: 4px; list-style: none; display: flex; flex-direction: column; gap: 8px;
+  max-height: 256px; /* 4 rows on mobile */
+  overflow-y: auto; overscroll-behavior: contain;
+}
+@media (min-width: 768px) { .pm-list { max-height: 512px; } /* 8 rows on desktop */ }
+.pm-row { display: flex; align-items: center; gap: 8px; height: 56px; flex: none; }
+.pm-row .pm-user { flex: 1 1 auto; width: auto; min-width: 0; height: 56px; padding: 0 14px; }
+.pm-trash {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent;
+  color: var(--muted); display: grid; place-items: center; transition: background .15s, color .15s;
+}
+.pm-trash:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pm-trash:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }

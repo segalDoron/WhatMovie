@@ -70,6 +70,15 @@ export const users = {
     return user;
   },
 
+  /** Removes a user. If the active user is removed, the first remaining user becomes active. */
+  remove(id: number) {
+    const list = users.getAll();
+    if (!list.some((u) => u.id === id)) return;
+    const rest = list.filter((u) => u.id !== id);
+    const hasActive = rest.some((u) => u.isActive);
+    commit(!rest.length || hasActive ? rest : rest.map((u, i) => (i === 0 ? { ...u, isActive: true } : u)));
+  },
+
   /** Only this user is active afterwards. */
   setActive(id: number) {
     if (!users.getAll().some((u) => u.id === id)) return;
