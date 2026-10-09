@@ -1,13 +1,39 @@
-/** A local profile. `id` is a unique 4-digit number (1000-9999). */
-export interface UserInfo { id: number; name: string; isActive: boolean }
+import type { Favorite } from "./favorites";
+import type { SavedSearch } from "./searchHistory";
+import type { VoteStore } from "./votes";
+
+/** A local profile with data scoped to that user. */
+export interface UserInfo {
+  id: number;
+  name: string;
+  isActive: boolean;
+  favorites: Favorite[];
+  searchHistory: SavedSearch[];
+  votes: VoteStore;
+}
 
 const KEY = "usersInfo";
+const GUEST_ID = 9999; // reserved for the guest user
 const listeners = new Set<() => void>();
 let snapshot: UserInfo[] | null = null; // stable reference between changes (needed by useSyncExternalStore)
 
+const isVoteStore = (v: unknown): v is VoteStore => {
+  const o = v as VoteStore;
+  return !!o && Array.isArray(o.like) && Array.isArray(o.dislike);
+};
+
 const isUser = (v: unknown): v is UserInfo => {
   const u = v as UserInfo;
-  return !!u && typeof u.id === "number" && typeof u.name === "string" && u.name.trim() !== "" && typeof u.isActive === "boolean";
+  return (
+    !!u &&
+    typeof u.id === "number" &&
+    typeof u.name === "string" &&
+    u.name.trim() !== "" &&
+    typeof u.isActive === "boolean" &&
+    Array.isArray(u.favorites) &&
+    Array.isArray(u.searchHistory) &&
+    isVoteStore(u.votes)
+  );
 };
 
 function read(): UserInfo[] {
@@ -52,6 +78,29 @@ export const users = {
   getAll: (): UserInfo[] => (snapshot ??= read()),
   getActive: (): UserInfo | undefined => users.getAll().find((u) => u.isActive),
 
+  /** App start: ensure guest user exists and is active. Guest data is cleared on every page load. */
+  ensureGuest() {
+    let list = users.getAll();
+    let guest = list.find((u) => u.id === GUEST_ID);
+
+    if (guest) {
+      // Guest exists: clear their data but keep the user entry
+      guest = { ...guest, favorites: [], searchHistory: [], votes: { like: [], dislike: [] }, isActive: true };
+      commit(list.map((u) => ({ ...u, isActive: u.id === GUEST_ID, ...( u.id === GUEST_ID ? guest : {}) })));
+    } else {
+      // No guest: create one and make sure they're the only active user
+      guest = {
+        id: GUEST_ID,
+        name: "Guest",
+        isActive: true,
+        favorites: [],
+        searchHistory: [],
+        votes: { like: [], dislike: [] },
+      };
+      commit([...list.map((u) => ({ ...u, isActive: false })), guest]);
+    }
+  },
+
   /** App start: users exist but none is active -> the first one becomes active. (Extra active users are cleared.) */
   ensureActive() {
     const list = users.getAll();
@@ -65,9 +114,22 @@ export const users = {
   /** All users become inactive, the new one is added as the active user. */
   add(name: string): UserInfo {
     const list = users.getAll();
-    const user: UserInfo = { id: newId(new Set(list.map((u) => u.id))), name: name.trim(), isActive: true };
+    const user: UserInfo = {
+      id: newId(new Set(list.map((u) => u.id))),
+      name: name.trim(),
+      isActive: true,
+      favorites: [],
+      searchHistory: [],
+      votes: { like: [], dislike: [] },
+    };
     commit([...list.map((u) => ({ ...u, isActive: false })), user]);
     return user;
+  },
+
+  /** Only this user is active afterwards. */
+  setActive(id: number) {
+    if (!users.getAll().some((u) => u.id === id)) return;
+    commit(users.getAll().map((u) => ({ ...u, isActive: u.id === id })));
   },
 
   /** Removes a user. If the active user is removed, the first remaining user becomes active. */
@@ -79,10 +141,13 @@ export const users = {
     commit(!rest.length || hasActive ? rest : rest.map((u, i) => (i === 0 ? { ...u, isActive: true } : u)));
   },
 
-  /** Only this user is active afterwards. */
-  setActive(id: number) {
-    if (!users.getAll().some((u) => u.id === id)) return;
-    commit(users.getAll().map((u) => ({ ...u, isActive: u.id === id })));
+  /** Updates a specific user's data. */
+  updateUser(id: number, updates: Partial<UserInfo>) {
+    const list = users.getAll();
+    const idx = list.findIndex((u) => u.id === id);
+    if (idx === -1) return;
+    list[idx] = { ...list[idx], ...updates, id, isActive: list[idx].isActive }; // preserve id and isActive
+    commit([...list]);
   },
 
   subscribe(cb: () => void): () => void {

@@ -1,11 +1,9 @@
-import type { RefObject } from "react";
 import type { Favorite } from "./favorites";
 import MovieRow from "./MovieRow";
 import { favorites } from "./favorites";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
-  closeRef?: RefObject<HTMLButtonElement | null>;
   items: Favorite[];
   loading: boolean;
   error: string;
@@ -33,7 +31,7 @@ export default function FavoritesContent({ items, loading, error, onClose, onPic
         ) : (
           <ul className="list">
             {items.map((f) => (
-              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} onRemove={() => favorites.remove(f.id)} />
+              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} onRemove={() => favorites.toggle(f)} />
             ))}
           </ul>
         )}
