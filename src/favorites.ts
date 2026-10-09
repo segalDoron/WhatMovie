@@ -3,9 +3,7 @@ import { users } from "./users";
 
 export type Favorite = Pick<Movie, "id" | "title" | "genres" | "year" | "score" | "poster" | "rating">;
 
-const listeners = new Set<() => void>();
-
-const emit = () => listeners.forEach((l) => l());
+const NONE: Favorite[] = []; // one shared empty list, so getAll() returns the same value while nothing changed
 
 const pick = (m: Favorite): Favorite => ({
   id: m.id,
@@ -18,7 +16,7 @@ const pick = (m: Favorite): Favorite => ({
 });
 
 export const favorites = {
-  getAll: (): Favorite[] => users.getActive()?.favorites ?? [],
+  getAll: (): Favorite[] => users.getActive()?.favorites ?? NONE,
 
   has: (id: number): boolean => favorites.getAll().some((m) => m.id === id),
 
@@ -36,15 +34,6 @@ export const favorites = {
     return true;
   },
 
-  subscribe(cb: () => void): () => void {
-    listeners.add(cb);
-    if (listeners.size === 1) {
-      const sub = users.subscribe(() => emit());
-      return () => {
-        listeners.delete(cb);
-        if (!listeners.size) sub();
-      };
-    }
-    return () => listeners.delete(cb);
-  },
+  // The list lives inside the active user, so any change to the users store is the signal.
+  subscribe: (cb: () => void): (() => void) => users.subscribe(cb),
 };

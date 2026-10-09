@@ -22,24 +22,24 @@ const isVoteStore = (v: unknown): v is VoteStore => {
   return !!o && Array.isArray(o.like) && Array.isArray(o.dislike);
 };
 
-const isUser = (v: unknown): v is UserInfo => {
-  const u = v as UserInfo;
-  return (
-    !!u &&
-    typeof u.id === "number" &&
-    typeof u.name === "string" &&
-    u.name.trim() !== "" &&
-    typeof u.isActive === "boolean" &&
-    Array.isArray(u.favorites) &&
-    Array.isArray(u.searchHistory) &&
-    isVoteStore(u.votes)
-  );
-};
+/** Accepts profiles saved before per-user data existed (they get empty lists) and drops anything malformed. */
+function toUser(v: unknown): UserInfo | null {
+  const u = v as Partial<UserInfo> | null;
+  if (!u || typeof u.id !== "number" || typeof u.name !== "string" || u.name.trim() === "" || typeof u.isActive !== "boolean") return null;
+  return {
+    id: u.id,
+    name: u.name,
+    isActive: u.isActive,
+    favorites: Array.isArray(u.favorites) ? u.favorites : [],
+    searchHistory: Array.isArray(u.searchHistory) ? u.searchHistory : [],
+    votes: isVoteStore(u.votes) ? u.votes : { like: [], dislike: [] },
+  };
+}
 
 function read(): UserInfo[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter(isUser) : [];
+    return Array.isArray(parsed) ? parsed.map(toUser).filter((u): u is UserInfo => u !== null) : [];
   } catch {
     return [];
   }
@@ -145,13 +145,11 @@ export const users = {
     commit(!rest.length || hasActive ? rest : rest.map((u, i) => (i === 0 ? { ...u, isActive: true } : u)));
   },
 
-  /** Updates a specific user's data. */
+  /** Updates a specific user's data (id and isActive can't be changed here). */
   updateUser(id: number, updates: Partial<UserInfo>) {
     const list = users.getAll();
-    const idx = list.findIndex((u) => u.id === id);
-    if (idx === -1) return;
-    list[idx] = { ...list[idx], ...updates, id, isActive: list[idx].isActive }; // preserve id and isActive
-    commit([...list]);
+    if (!list.some((u) => u.id === id)) return;
+    commit(list.map((u) => (u.id === id ? { ...u, ...updates, id: u.id, isActive: u.isActive } : u)));
   },
 
   subscribe(cb: () => void): () => void {

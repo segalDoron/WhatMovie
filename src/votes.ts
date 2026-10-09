@@ -9,9 +9,7 @@ export interface VoteStore {
 }
 export type Vote = keyof VoteStore;
 
-const listeners = new Set<() => void>();
-
-const emit = () => listeners.forEach((l) => l());
+const NONE: VoteStore = { like: [], dislike: [] }; // one shared empty value, so getAll() is stable while nothing changed
 
 const pick = (m: VotedMovie): VotedMovie => ({
   id: m.id,
@@ -24,7 +22,7 @@ const pick = (m: VotedMovie): VotedMovie => ({
 });
 
 export const votes = {
-  getAll: (): VoteStore => users.getActive()?.votes ?? { like: [], dislike: [] },
+  getAll: (): VoteStore => users.getActive()?.votes ?? NONE,
 
   has: (kind: Vote, id: number): boolean => votes.getAll()[kind].some((m) => m.id === id),
 
@@ -59,15 +57,5 @@ export const votes = {
     return true;
   },
 
-  subscribe(cb: () => void): () => void {
-    listeners.add(cb);
-    if (listeners.size === 1) {
-      const sub = users.subscribe(() => emit());
-      return () => {
-        listeners.delete(cb);
-        if (!listeners.size) sub();
-      };
-    }
-    return () => listeners.delete(cb);
-  },
+  subscribe: (cb: () => void): (() => void) => users.subscribe(cb),
 };

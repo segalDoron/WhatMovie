@@ -8,14 +8,7 @@ export interface SavedSearch {
 }
 
 export const MAX_SEARCHES = 5;
-const listeners = new Set<() => void>();
-
-const emit = () => listeners.forEach((l) => l());
-
-const isSaved = (v: unknown): v is SavedSearch => {
-  const s = v as SavedSearch;
-  return !!s && typeof s.id === "string" && !!s.answers && typeof s.answers === "object";
-};
+const NONE: SavedSearch[] = []; // one shared empty list, so getAll() returns the same value while nothing changed
 
 const clean = (a: Answers): Answers =>
   Object.fromEntries(Object.entries(a).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : String(v ?? "").trim() !== "")));
@@ -24,10 +17,7 @@ const signature = (a: Answers) =>
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 export const searchHistory = {
-  getAll: (): SavedSearch[] => {
-    const active = users.getActive();
-    return active ? active.searchHistory.filter(isSaved) : [];
-  },
+  getAll: (): SavedSearch[] => users.getActive()?.searchHistory ?? NONE,
 
   add(answers: Answers) {
     const active = users.getActive();
@@ -46,15 +36,5 @@ export const searchHistory = {
     users.updateUser(active.id, { ...active, searchHistory: active.searchHistory.filter((s) => s.id !== id) });
   },
 
-  subscribe(cb: () => void): () => void {
-    listeners.add(cb);
-    if (listeners.size === 1) {
-      const sub = users.subscribe(() => emit());
-      return () => {
-        listeners.delete(cb);
-        if (!listeners.size) sub();
-      };
-    }
-    return () => listeners.delete(cb);
-  },
+  subscribe: (cb: () => void): (() => void) => users.subscribe(cb),
 };
