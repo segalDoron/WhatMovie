@@ -1,9 +1,11 @@
+import type { RefObject } from "react";
 import type { Favorite } from "./favorites";
 import MovieRow from "./MovieRow";
 import { favorites } from "./favorites";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
+  closeRef?: RefObject<HTMLButtonElement | null>;
   items: Favorite[];
   loading: boolean;
   error: string;
