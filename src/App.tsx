@@ -69,7 +69,7 @@ export default function App() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
   // "Who am I?" modal: open on load when there are no users yet.
-  const [profileOpen, setProfileOpen] = useState(() => users.getAll().length === 0);
+  const [profileOpen, setProfileOpen] = useState(false); // guest auto-creates, profile modal not auto-open
   const [panel, setPanel] = useState<Panel | null>(null); // which list is open (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const sheetShown = panel !== null && !isDesktop; // mobile: bottom sheet
@@ -94,7 +94,7 @@ export default function App() {
   const submitRef = useRef<(answers: Answers) => void>(() => {});
 
   useEffect(() => {
-    users.ensureActive(); // users exist but none is active: the first one becomes active
+    users.ensureGuest(); // ensure guest user exists with fresh data on every load
   }, []);
 
   useEffect(() => {
