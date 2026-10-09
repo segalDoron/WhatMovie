@@ -80,16 +80,20 @@ export const users = {
 
   /** App start: ensure guest user exists and is active. Guest data is cleared on every page load. */
   ensureGuest() {
-    let list = users.getAll();
-    let guest = list.find((u) => u.id === GUEST_ID);
+    const list = users.getAll();
+    const guestIdx = list.findIndex((u) => u.id === GUEST_ID);
 
-    if (guest) {
-      // Guest exists: clear their data but keep the user entry
-      guest = { ...guest, favorites: [], searchHistory: [], votes: { like: [], dislike: [] }, isActive: true };
-      commit(list.map((u) => ({ ...u, isActive: u.id === GUEST_ID, ...( u.id === GUEST_ID ? guest : {}) })));
+    if (guestIdx >= 0) {
+      // Guest exists: clear data, make active, deactivate others
+      const updated = list.map((u, i) =>
+        i === guestIdx
+          ? { ...u, favorites: [], searchHistory: [], votes: { like: [], dislike: [] }, isActive: true }
+          : { ...u, isActive: false }
+      );
+      commit(updated);
     } else {
-      // No guest: create one and make sure they're the only active user
-      guest = {
+      // No guest: create one as the active user
+      const guest: UserInfo = {
         id: GUEST_ID,
         name: "Guest",
         isActive: true,
