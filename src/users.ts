@@ -14,6 +14,14 @@ export interface UserInfo {
 
 const KEY = "usersInfo";
 const GUEST_ID = 9999; // reserved for the guest user
+
+export const isGuest = (u: Pick<UserInfo, "id">): boolean => u.id === GUEST_ID;
+
+/** First letter of the first name, capitalised: "eli cohen" -> "E". */
+export function initialOf(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  return ([...first][0] ?? "").toUpperCase();
+}
 const listeners = new Set<() => void>();
 let snapshot: UserInfo[] | null = null; // stable reference between changes (needed by useSyncExternalStore)
 
@@ -78,41 +86,30 @@ export const users = {
   getAll: (): UserInfo[] => (snapshot ??= read()),
   getActive: (): UserInfo | undefined => users.getAll().find((u) => u.isActive),
 
-  /** App start: ensure guest user exists and is active. Guest data is cleared on every page load. */
-  ensureGuest() {
+  /**
+   * App start.
+   * - The guest always exists and starts empty: guest data is cleared on every load.
+   * - If there is a user other than the guest, one of them is active: the one that was already active,
+   *   otherwise the first one. With no other user, the guest is active.
+   */
+  startUp() {
     const list = users.getAll();
-    const guestIdx = list.findIndex((u) => u.id === GUEST_ID);
+    const real = list.filter((u) => !isGuest(u));
+    const activeId = (real.find((u) => u.isActive) ?? real[0])?.id ?? GUEST_ID;
 
-    if (guestIdx >= 0) {
-      // Guest exists: clear data, make active, deactivate others
-      const updated = list.map((u, i) =>
-        i === guestIdx
-          ? { ...u, favorites: [], searchHistory: [], votes: { like: [], dislike: [] }, isActive: true }
-          : { ...u, isActive: false }
-      );
-      commit(updated);
-    } else {
-      // No guest: create one as the active user
-      const guest: UserInfo = {
-        id: GUEST_ID,
-        name: "Guest",
-        isActive: true,
-        favorites: [],
-        searchHistory: [],
-        votes: { like: [], dislike: [] },
-      };
-      commit([...list.map((u) => ({ ...u, isActive: false })), guest]);
-    }
-  },
-
-  /** App start: users exist but none is active -> the first one becomes active. (Extra active users are cleared.) */
-  ensureActive() {
-    const list = users.getAll();
-    if (!list.length) return;
-    const firstActive = list.findIndex((u) => u.isActive);
-    const keep = firstActive === -1 ? 0 : firstActive;
-    if (list.every((u, i) => u.isActive === (i === keep))) return; // already exactly one active user
-    commit(list.map((u, i) => ({ ...u, isActive: i === keep })));
+    const old = list.find(isGuest);
+    const guest: UserInfo = {
+      id: GUEST_ID,
+      name: old?.name ?? "Guest",
+      isActive: activeId === GUEST_ID,
+      favorites: [],
+      searchHistory: [],
+      votes: { like: [], dislike: [] },
+    };
+    const others = list.filter((u) => !isGuest(u)).map((u) => ({ ...u, isActive: u.id === activeId }));
+    // Keep the order the users already had; a brand new guest goes first.
+    const next = old ? list.map((u) => (isGuest(u) ? guest : { ...u, isActive: u.id === activeId })) : [guest, ...others];
+    commit(next);
   },
 
   /** All users become inactive, the new one is added as the active user. */
@@ -141,8 +138,9 @@ export const users = {
     const list = users.getAll();
     if (!list.some((u) => u.id === id)) return;
     const rest = list.filter((u) => u.id !== id);
-    const hasActive = rest.some((u) => u.isActive);
-    commit(!rest.length || hasActive ? rest : rest.map((u, i) => (i === 0 ? { ...u, isActive: true } : u)));
+    if (!rest.length || rest.some((u) => u.isActive)) return commit(rest);
+    const next = (rest.find((u) => !isGuest(u)) ?? rest[0]).id; // a real user first, the guest only if nobody else is left
+    commit(rest.map((u) => ({ ...u, isActive: u.id === next })));
   },
 
   /** Updates a specific user's data (id and isActive can't be changed here). */

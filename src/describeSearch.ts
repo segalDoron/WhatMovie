@@ -20,7 +20,7 @@ export function describeSearch(a: Answers): { title: string; details: string } {
   if (!title) title = loved ? `Like ${loved}` : actor ? `With ${actor}` : "Any movie";
 
   const parts = [
-    ...["who", "tone", "time", "novelty", "energy"].flatMap((k) => labelsOf(a, k)),
+    ...["who", "time", "novelty", "energy"].flatMap((k) => labelsOf(a, k)),
     ...(labelsOf(a, "ratings").length ? [`Rated ${labelsOf(a, "ratings").join(", ")}`] : []),
     ...(labelsOf(a, "platform").length ? [`On ${labelsOf(a, "platform").join(", ")}`] : []),
     ...(labelsOf(a, "stars").length ? [`Stars ${labelsOf(a, "stars").join(", ")}`] : []),

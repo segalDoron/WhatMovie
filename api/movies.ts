@@ -5,6 +5,7 @@ const IMG = "https://image.tmdb.org/t/p";
 interface TmdbMovie {
   id: number; title: string; release_date?: string; vote_average: number;
   poster_path: string | null; backdrop_path: string | null; overview: string; genre_ids?: number[];
+  original_language?: string;
 }
 interface Movie {
   id: number; title: string; genres: string[]; year: string; score: number;
@@ -91,8 +92,6 @@ const MOOD: Record<string, { must?: number[]; any?: number[] }> = {
   comforted: { any: [35, 10751] }, twists: { any: [9648, 53] }, mystery: { must: [9648] },
 };
 const AVOID: Record<string, number> = { horror: 27, war: 10752, romance: 10749 };
-// Tone works by excluding genres that clash with it.
-const TONE_EXCLUDE: Record<string, number[]> = { dark: [35, 10751], serious: [35, 10751], light: [27, 53, 80], funny: [27, 53, 80] };
 // "This or that" taste picks that can be expressed as genres.
 const TASTE_GENRES: Record<string, number[]> = {
   laugh: [35], tense: [53], think: [9648, 878], feel: [18, 10749], shocking: [9648, 53], action: [28], slow: [18, 9648],
@@ -100,6 +99,14 @@ const TASTE_GENRES: Record<string, number[]> = {
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 const unique = <T,>(xs: T[]): T[] => [...new Set(xs)];
+
+/** Family-friendly mode: kids are watching, or the "Kids" genre was picked. */
+const kidsMode = (a: Answers): boolean => a.who === "kids" || asList(a.genres).includes("kids");
+/** Cartoons and anime only show up when asked for. */
+const allowsAnimation = (a: Answers): boolean => {
+  const g = asList(a.genres);
+  return g.includes("animation") || g.includes("anime") || g.includes("kids") || a.who === "kids";
+};
 
 function yearRange(a: Answers) {
   return { from: Number(a.yearFrom) || undefined, to: Number(a.yearTo) || undefined };
@@ -119,29 +126,30 @@ function rulePlan(a: Answers): Plan {
   const plan: Plan = { mustHave: [], anyOf: [], exclude: [], keywords: [] };
   const picked = asList(a.genres);
   const ids = picked.map((k) => GENRE_ID[k]).filter(Boolean);
+  // "Kids" and "Anime" are requirements on top of the other picks: Family movies, and Japanese animation.
+  const needs = [picked.includes("kids") ? FAMILY : 0, picked.includes("anime") ? ANIMATION : 0].filter(Boolean);
 
   if (a.who === "kids") plan.anyOf = [FAMILY, ANIMATION];
-  else if (ids.length || picked.includes("crazynight")) {
+  else if (ids.length || needs.length || picked.includes("crazynight")) {
     if (ids.includes(HORROR)) plan.mustHave.push(HORROR); // scary means Horror, never "action with scares"
-    const rest = ids.filter((i) => i !== HORROR);
+    const rest = ids.filter((i) => i !== HORROR && !needs.includes(i));
     if (rest.length && rest.length <= 2) plan.mustHave.push(...rest); // a blend, e.g. horror comedy
     else if (rest.length) plan.anyOf = rest;
-    if (!plan.mustHave.length && !plan.anyOf.length) plan.anyOf = [35, 80]; // "one crazy night"
+    if (!needs.length && !plan.mustHave.length && !plan.anyOf.length) plan.anyOf = [35, 80]; // "one crazy night"
   } else {
     const mood = MOOD[String(a.mood)];
     const taste = unique(asList(a.taste).flatMap((k) => TASTE_GENRES[k] ?? []));
     if (mood) { plan.mustHave = mood.must ?? []; plan.anyOf = mood.any ?? []; }
     else if (taste.length) plan.anyOf = taste;
-    else if (a.tone === "funny") plan.mustHave = [35];
   }
-  plan.exclude = [...(TONE_EXCLUDE[String(a.tone)] ?? [])];
+  plan.mustHave = unique([...plan.mustHave, ...needs]);
   return plan;
 }
 
 /** Rules that always apply, whatever Gemini said. */
 function enforce(plan: Plan, a: Answers): Plan {
   const picked = asList(a.genres);
-  const allowAnimation = picked.includes("animation") || a.who === "kids";
+  const allowAnimation = allowsAnimation(a);
   const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
   const strip = (ids: number[]) => unique(allowAnimation ? ids : ids.filter((g) => g !== ANIMATION)).filter((g) => !avoid.includes(g));
 
@@ -224,10 +232,10 @@ async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boo
     "Rules:",
     "- Be precise and never pad the list. A request for scary or horror movies means only the Horror genre; do not add Action or Thriller to it.",
     '- "genres" are genres every result must belong to. Use genreMatch "all" for a blend such as horror comedy, otherwise "any".',
-    '- "excludeGenres" lists genres that clash with the requested mood or tone.',
-    "- Never include Animation unless the user asked for animation or kids are watching.",
+    '- "excludeGenres" lists genres that clash with the requested mood.',
+    "- Never include Animation unless the user asked for animation, anime or kids, or kids are watching.",
     '- "keywords": at most 3 short TMDB keywords for a specific theme the user clearly implied (for example "twist ending", "slasher"), otherwise [].',
-    "- Form keys: who (solo, partner, friends, kids), mood, genres, tone (dark to funny), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
+    "- Form keys: who (solo, partner, friends, kids), mood, genres (kids = family friendly, anime = Japanese animation), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
   ].join("\n");
 
   const raw = (await geminiJson(system, JSON.stringify(a))) as Record<string, unknown> | null;
@@ -288,13 +296,21 @@ function starFilter(a: Answers): ((m: TmdbMovie) => boolean) | undefined {
   };
 }
 
+/** Checks every candidate, whatever its source: the picked star bands, and Japanese originals for anime. */
+function movieFilter(a: Answers): ((m: TmdbMovie) => boolean) | undefined {
+  const stars = starFilter(a);
+  const anime = asList(a.genres).includes("anime");
+  if (!stars && !anime) return undefined;
+  return (m) => (!stars || stars(m)) && (!anime || m.original_language === "ja");
+}
+
 /* ---------- Age ratings (US certifications) ---------- */
 const RATING_ORDER = ["G", "PG", "PG-13", "R", "NC-17"];
 
 /** The age ratings the user picked, in order. With kids watching only G and PG can apply (the kids rule stays on). */
 function ratingPicks(a: Answers): string[] {
   const picks = RATING_ORDER.filter((r) => asList(a.ratings).includes(r));
-  return a.who === "kids" ? picks.filter((r) => r === "G" || r === "PG") : picks;
+  return kidsMode(a) ? picks.filter((r) => r === "G" || r === "PG") : picks;
 }
 
 /** TMDB filters a range (from the lowest pick to the highest). A gap, like G + R, lets PG and PG-13 in, so those picks are checked one by one. */
@@ -331,7 +347,8 @@ function baseParams(a: Answers, plan: Plan): Params {
     sort_by: plan.sortBy ?? "popularity.desc",
     "vote_average.gte": plan.minRating ?? (a.energy === "focus" ? 7.3 : 6.3),
   };
-  if (a.who === "kids") { p.certification_country = "US"; p["certification.lte"] = "PG"; }
+  if (kidsMode(a)) { p.certification_country = "US"; p["certification.lte"] = "PG"; }
+  if (asList(a.genres).includes("anime")) p.with_original_language = "ja"; // anime = Japanese animation
   const ratingList = ratingPicks(a);
   if (ratingList.length) {
     p.certification_country = "US";
@@ -384,7 +401,7 @@ function isValid(m: TmdbMovie, plan: Plan): boolean {
 const GENERIC_PASS = 2;
 
 function globalExclude(a: Answers): number[] {
-  const allowAnimation = asList(a.genres).includes("animation") || a.who === "kids";
+  const allowAnimation = allowsAnimation(a);
   const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
   return unique([DOCUMENTARY, TV_MOVIE, ...(allowAnimation ? [] : [ANIMATION]), ...avoid]);
 }
@@ -393,7 +410,7 @@ interface Pass { params: Params; plan: Plan }
 interface Cursor { pass: number; page: number; plan: Plan; kw: number[] }
 
 function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[] {
-  const near = unique([...plan.mustHave, ...plan.anyOf]);
+  const near = asList(a.genres).includes("anime") ? [ANIMATION] : unique([...plan.mustHave, ...plan.anyOf]); // anime stays animation
   const ex = globalExclude(a);
   const floor = starFloor(a); // 0 unless stars were picked: the relaxed passes keep the picked star range
   const generic: Params = { ...base, "vote_count.gte": 50, "vote_average.gte": floor, "with_runtime.gte": 70, sort_by: "popularity.desc" };
@@ -486,9 +503,9 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
       if (e) e.n++;
       else tally.set(m.id, { m, n: 1 });
     }
-  const byStars = starFilter(a);
+  const byFilter = movieFilter(a);
   const unfiltered = [...tally.values()].sort((x, y) => y.n - x.n || y.m.vote_average - x.m.vote_average).map((e) => e.m);
-  const starred = byStars ? unfiltered.filter(byStars) : unfiltered;
+  const starred = byFilter ? unfiltered.filter(byFilter) : unfiltered;
   const agePicks = ratingPicks(a);
   const ranked = agePicks.length ? await keepRated(starred.slice(0, 60), new Set(agePicks)) : starred; // recommendations carry no age rating, so check it here
 
@@ -565,7 +582,7 @@ async function search(
     target: TARGET,
     maxScan: resume ? 10 : MAX_PAGES,
     allowGeneric: !!resume, // the generic fallback only runs for "show more"
-    accept: starFilter(a),
+    accept: movieFilter(a),
     verify: (() => { const gap = ratingGap(a); return gap ? (list: TmdbMovie[]) => keepRated(list, gap) : undefined; })(),
   });
   return { movies: found.map((m) => toMovie(m, g)), cursor: next ? { ...next, plan, kw } : null };

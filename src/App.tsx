@@ -6,12 +6,13 @@ import MovieDetail from "./MovieDetail";
 import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
 import ProfileModal from "./ProfileModal";
-import { users } from "./users";
+import { users, isGuest, initialOf } from "./users";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
 import { Heart, ChevronRight, Clock, User } from "./Icons";
 import { useFavorites } from "./useFavorites";
 import { useSearchHistory } from "./useSearchHistory";
+import { useUsers } from "./useUsers";
 import { searchHistory, type SavedSearch } from "./searchHistory";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
@@ -60,6 +61,11 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const favorites = useFavorites();
   const searches = useSearchHistory();
+  const activeUser = useUsers().find((u) => u.isActive);
+  // Profile button: the first letter of the first name for a real user, the user icon for the guest.
+  const named = activeUser && !isGuest(activeUser) ? activeUser : null;
+  const profileFace = named ? <span className="initial" aria-hidden="true">{initialOf(named.name)}</span> : <User />;
+  const profileLabel = named ? `Profile: ${named.name}` : "Profile";
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
   const [sortByRating, setSortByRating] = useState(false); // list order: best match first, or highest rating first
@@ -95,7 +101,7 @@ export default function App() {
   const submitRef = useRef<(answers: Answers) => void>(() => {});
 
   useEffect(() => {
-    users.ensureGuest(); // ensure guest user exists with fresh data on every load
+    users.startUp(); // guest starts empty; a real user (if any) is the active one
   }, []);
 
   useEffect(() => {
@@ -297,9 +303,9 @@ export default function App() {
                 className="profile-top"
                 onClick={() => setProfileOpen(true)}
                 aria-haspopup="dialog"
-                aria-label="Profile"
+                aria-label={profileLabel}
               >
-                <User />
+                {profileFace}
               </button>
               <button
                 className="hist-top"
@@ -394,8 +400,8 @@ export default function App() {
               <Heart filled={favorites.length > 0} />
               {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
             </button>
-            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label="Profile">
-              <User />
+            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label={profileLabel}>
+              {profileFace}
             </button>
           </nav>
         )}
