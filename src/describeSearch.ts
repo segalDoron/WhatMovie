@@ -21,7 +21,9 @@ export function describeSearch(a: Answers): { title: string; details: string } {
 
   const parts = [
     ...["who", "tone", "time", "novelty", "energy"].flatMap((k) => labelsOf(a, k)),
+    ...(labelsOf(a, "ratings").length ? [`Rated ${labelsOf(a, "ratings").join(", ")}`] : []),
     ...(labelsOf(a, "platform").length ? [`On ${labelsOf(a, "platform").join(", ")}`] : []),
+    ...(labelsOf(a, "stars").length ? [`Stars ${labelsOf(a, "stars").join(", ")}`] : []),
     ...(labelsOf(a, "avoid").length ? [`Skip ${labelsOf(a, "avoid").join(", ").toLowerCase()}`] : []),
     ...(a.yearFrom && a.yearTo ? [`${a.yearFrom}–${a.yearTo}`] : []),
     ...(actor && title !== `With ${actor}` ? [`With ${actor}`] : []),

@@ -1,5 +1,5 @@
 import type { Movie } from "./types";
-import { Chevron } from "./Icons";
+import { Chevron, Sort } from "./Icons";
 import MovieRow from "./MovieRow";
 import Reel from "./Reel";
 
@@ -12,9 +12,11 @@ interface Props {
   loadingMore: boolean;
   moreMessage: string;
   onMore: () => void;
+  sorted: boolean;
+  onToggleSort: () => void;
 }
 
-export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore }: Props) {
+export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore, sorted, onToggleSort }: Props) {
   const t = tabbable ? 0 : -1;
   return (
     <>
@@ -23,6 +25,13 @@ export default function ResultsList({ movies, onOpen, onStartOver, tabbable, has
           <Chevron /> Start over
         </button>
       </header>
+      {movies.length > 1 && (
+        <div className="list-tools">
+          <button className="sort" aria-pressed={sorted} onClick={onToggleSort} tabIndex={t}>
+            <Sort /> Sort by rating
+          </button>
+        </div>
+      )}
       {movies.length === 0 ? (
         <p className="empty">No matches. Try loosening a filter or start over.</p>
       ) : (
