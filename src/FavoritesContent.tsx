@@ -5,21 +5,21 @@ import { favorites } from "./favorites";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
-  closeRef?: RefObject<HTMLButtonElement | null>;
   items: Favorite[];
   loading: boolean;
   error: string;
   onClose: () => void;
   onPick: (f: Favorite) => void;
+  closeRef?: RefObject<HTMLButtonElement>;
 }
 
 /** Header, scrollable list and loader. Shared by the mobile sheet and the desktop drawer. */
-export default function FavoritesContent({ items, loading, error, onClose, onPick }: FavoritesContentProps) {
+export default function FavoritesContent({ items, loading, error, onClose, onPick, closeRef }: FavoritesContentProps) {
   return (
     <>
       <header className="sheet-head">
         <h2>Favorites</h2>
-        <button className="x" onClick={onClose} aria-label="Close favorites">
+        <button ref={closeRef} className="x" onClick={onClose} aria-label="Close favorites">
           <Close />
         </button>
       </header>

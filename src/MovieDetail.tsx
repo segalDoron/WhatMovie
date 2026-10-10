@@ -10,12 +10,20 @@ import TrailerModal from "./TrailerModal";
 
 interface Props {
   movie: Movie | null;
+  open: boolean; // is the details page on screen
   onBack: () => void;
   onStartOver: () => void;
   tabbable: boolean;
 }
 
-export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Props) {
+/** 135 -> "2h 15m", 45 -> "45m", 120 -> "2h" */
+function formatRuntime(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ");
+}
+
+export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable }: Props) {
   const [cast, setCast] = useState<CastMember[] | null>(null);
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
@@ -39,6 +47,11 @@ export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Pr
       .catch(() => {});
     return () => { live = false; };
   }, [movie?.id]);
+
+  // Leaving the page (back, start over, browser back) also closes the trailer.
+  useEffect(() => {
+    if (!open) setTrailerOpen(false);
+  }, [open]);
 
   const liked = !!movie && voted.like.some((m) => m.id === movie.id);
   const disliked = !!movie && voted.dislike.some((m) => m.id === movie.id);
@@ -86,6 +99,7 @@ export default function MovieDetail({ movie, onBack, onStartOver, tabbable }: Pr
           <h2>{movie.title}</h2>
           <p className="facts">
             {movie.year} · {movie.genres.join(", ")} · <span className="score"><Star /> {movie.score.toFixed(1)}</span>
+            {!!movie.runtime && <> · {formatRuntime(movie.runtime)}</>}
           </p>
           <p className="overview">{movie.overview || "No description available."}</p>
 

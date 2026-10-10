@@ -8,6 +8,7 @@ export interface Movie {
   backdrop: string | null;
   overview: string;
   rating?: string; // age certification, e.g. "PG-13"
+  runtime?: number; // minutes
   providers?: string[]; // streaming services in your region, e.g. ["Netflix"]
 }
 export type Answers = Record<string, string | string[]>;

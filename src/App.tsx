@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QuestionForm from "./QuestionForm";
 import Loading from "./Loading";
 import ResultsList from "./ResultsList";
@@ -6,12 +6,13 @@ import MovieDetail from "./MovieDetail";
 import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
 import ProfileModal from "./ProfileModal";
-import { users } from "./users";
+import { users, isGuest, initialOf } from "./users";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
 import { Heart, ChevronRight, Clock, User } from "./Icons";
 import { useFavorites } from "./useFavorites";
 import { useSearchHistory } from "./useSearchHistory";
+import { useUsers } from "./useUsers";
 import { searchHistory, type SavedSearch } from "./searchHistory";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
@@ -60,8 +61,14 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const favorites = useFavorites();
   const searches = useSearchHistory();
+  const activeUser = useUsers().find((u) => u.isActive);
+  // Profile button: the first letter of the first name for a real user, the user icon for the guest.
+  const named = activeUser && !isGuest(activeUser) ? activeUser : null;
+  const profileFace = named ? <span className="initial" aria-hidden="true">{initialOf(named.name)}</span> : <User />;
+  const profileLabel = named ? `Profile: ${named.name}` : "Profile";
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [sortByRating, setSortByRating] = useState(false); // list order: best match first, or highest rating first
   const [cursor, setCursor] = useState<Cursor | null>(null); // where "show more" continues; null = nothing more to load
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreMessage, setMoreMessage] = useState("");
@@ -94,7 +101,7 @@ export default function App() {
   const submitRef = useRef<(answers: Answers) => void>(() => {});
 
   useEffect(() => {
-    users.ensureGuest(); // ensure guest user exists with fresh data on every load
+    users.startUp(); // guest starts empty; a real user (if any) is the active one
   }, []);
 
   useEffect(() => {
@@ -164,6 +171,7 @@ export default function App() {
       answersRef.current = answers;
       moreToken.current++;
       setMovies(result.movies);
+      setSortByRating(false);
       setCursor(result.cursor);
       setLoadingMore(false);
       setMoreMessage("");
@@ -225,7 +233,9 @@ export default function App() {
 
   // The movie after the current one in the list it was opened from.
   const sourceOf = (m: Movie): Source => detailSource.current.get(m.id) ?? "results";
-  const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : movies);
+  // What the list shows, in order. "Next movie" follows the same order.
+  const shownMovies = useMemo(() => (sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies), [movies, sortByRating]);
+  const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : shownMovies);
   const nextId = (() => {
     if (!selected) return null;
     const list = listOf(sourceOf(selected));
@@ -293,9 +303,9 @@ export default function App() {
                 className="profile-top"
                 onClick={() => setProfileOpen(true)}
                 aria-haspopup="dialog"
-                aria-label="Profile"
+                aria-label={profileLabel}
               >
-                <User />
+                {profileFace}
               </button>
               <button
                 className="hist-top"
@@ -340,7 +350,7 @@ export default function App() {
             <div className="stage">
               <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen} {...inertProps(sheetShown || detailOpen)}>
                 <ResultsList
-                  movies={movies}
+                  movies={shownMovies}
                   tabbable={!detailOpen && !sheetShown}
                   onStartOver={startOver}
                   onOpen={(m) => openDetail(m, "results")}
@@ -348,13 +358,15 @@ export default function App() {
                   loadingMore={loadingMore}
                   moreMessage={moreMessage}
                   onMore={loadMore}
+                  sorted={sortByRating}
+                  onToggleSort={() => setSortByRating((v) => !v)}
                 />
               </section>
             </div>
           )}
 
           <section ref={detailRef} className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen} {...inertProps(sheetShown)}>
-            <MovieDetail movie={selected} tabbable={detailOpen} onBack={goBack} onStartOver={startOver} />
+            <MovieDetail movie={selected} open={detailOpen} tabbable={detailOpen} onBack={goBack} onStartOver={startOver} />
           </section>
 
           {opening && (
@@ -388,8 +400,8 @@ export default function App() {
               <Heart filled={favorites.length > 0} />
               {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
             </button>
-            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label="Profile">
-              <User />
+            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label={profileLabel}>
+              {profileFace}
             </button>
           </nav>
         )}

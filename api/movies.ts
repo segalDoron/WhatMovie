@@ -5,10 +5,11 @@ const IMG = "https://image.tmdb.org/t/p";
 interface TmdbMovie {
   id: number; title: string; release_date?: string; vote_average: number;
   poster_path: string | null; backdrop_path: string | null; overview: string; genre_ids?: number[];
+  original_language?: string;
 }
 interface Movie {
   id: number; title: string; genres: string[]; year: string; score: number;
-  poster: string | null; backdrop: string | null; overview: string; rating: string; providers: string[];
+  poster: string | null; backdrop: string | null; overview: string; rating: string; providers: string[]; runtime?: number;
 }
 
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
@@ -40,12 +41,13 @@ const toMovie = (m: TmdbMovie, g: Map<number, string>): Movie => ({
 
 /* Age rating and streaming services for the viewer's region (falls back to the US for the rating). */
 interface ExtrasPayload {
+  runtime?: number | null; // minutes
   release_dates?: { results: { iso_3166_1: string; release_dates: { certification: string }[] }[] };
   "watch/providers"?: { results: Record<string, { flatrate?: { provider_name: string; display_priority?: number }[] }> };
 }
 const EXTRAS = { append_to_response: "release_dates,watch/providers" };
 
-function pickExtras(d: ExtrasPayload): { rating: string; providers: string[] } {
+function pickExtras(d: ExtrasPayload): { rating: string; providers: string[]; runtime?: number } {
   const region = process.env.WATCH_REGION ?? "US";
   const cert = (country: string) =>
     d.release_dates?.results.find((x) => x.iso_3166_1 === country)?.release_dates.find((r) => r.certification)?.certification ?? "";
@@ -54,7 +56,7 @@ function pickExtras(d: ExtrasPayload): { rating: string; providers: string[] } {
     .sort((x, y) => (x.display_priority ?? 99) - (y.display_priority ?? 99))
     .map((p) => p.provider_name)
     .filter((n) => !/with ads/i.test(n)); // skip the ad-tier duplicates ("Netflix Standard with Ads")
-  return { rating: cert(region) || cert("US"), providers: unique(names).slice(0, 6) };
+  return { rating: cert(region) || cert("US"), providers: unique(names).slice(0, 6), ...(d.runtime ? { runtime: d.runtime } : {}) };
 }
 
 async function withExtras(movies: Movie[]): Promise<Movie[]> {
@@ -90,8 +92,6 @@ const MOOD: Record<string, { must?: number[]; any?: number[] }> = {
   comforted: { any: [35, 10751] }, twists: { any: [9648, 53] }, mystery: { must: [9648] },
 };
 const AVOID: Record<string, number> = { horror: 27, war: 10752, romance: 10749 };
-// Tone works by excluding genres that clash with it.
-const TONE_EXCLUDE: Record<string, number[]> = { dark: [35, 10751], serious: [35, 10751], light: [27, 53, 80], funny: [27, 53, 80] };
 // "This or that" taste picks that can be expressed as genres.
 const TASTE_GENRES: Record<string, number[]> = {
   laugh: [35], tense: [53], think: [9648, 878], feel: [18, 10749], shocking: [9648, 53], action: [28], slow: [18, 9648],
@@ -99,6 +99,14 @@ const TASTE_GENRES: Record<string, number[]> = {
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 const unique = <T,>(xs: T[]): T[] => [...new Set(xs)];
+
+/** Family-friendly mode: kids are watching, or the "Kids" genre was picked. */
+const kidsMode = (a: Answers): boolean => a.who === "kids" || asList(a.genres).includes("kids");
+/** Cartoons and anime only show up when asked for. */
+const allowsAnimation = (a: Answers): boolean => {
+  const g = asList(a.genres);
+  return g.includes("animation") || g.includes("anime") || g.includes("kids") || a.who === "kids";
+};
 
 function yearRange(a: Answers) {
   return { from: Number(a.yearFrom) || undefined, to: Number(a.yearTo) || undefined };
@@ -118,29 +126,30 @@ function rulePlan(a: Answers): Plan {
   const plan: Plan = { mustHave: [], anyOf: [], exclude: [], keywords: [] };
   const picked = asList(a.genres);
   const ids = picked.map((k) => GENRE_ID[k]).filter(Boolean);
+  // "Kids" and "Anime" are requirements on top of the other picks: Family movies, and Japanese animation.
+  const needs = [picked.includes("kids") ? FAMILY : 0, picked.includes("anime") ? ANIMATION : 0].filter(Boolean);
 
   if (a.who === "kids") plan.anyOf = [FAMILY, ANIMATION];
-  else if (ids.length || picked.includes("crazynight")) {
+  else if (ids.length || needs.length || picked.includes("crazynight")) {
     if (ids.includes(HORROR)) plan.mustHave.push(HORROR); // scary means Horror, never "action with scares"
-    const rest = ids.filter((i) => i !== HORROR);
+    const rest = ids.filter((i) => i !== HORROR && !needs.includes(i));
     if (rest.length && rest.length <= 2) plan.mustHave.push(...rest); // a blend, e.g. horror comedy
     else if (rest.length) plan.anyOf = rest;
-    if (!plan.mustHave.length && !plan.anyOf.length) plan.anyOf = [35, 80]; // "one crazy night"
+    if (!needs.length && !plan.mustHave.length && !plan.anyOf.length) plan.anyOf = [35, 80]; // "one crazy night"
   } else {
     const mood = MOOD[String(a.mood)];
     const taste = unique(asList(a.taste).flatMap((k) => TASTE_GENRES[k] ?? []));
     if (mood) { plan.mustHave = mood.must ?? []; plan.anyOf = mood.any ?? []; }
     else if (taste.length) plan.anyOf = taste;
-    else if (a.tone === "funny") plan.mustHave = [35];
   }
-  plan.exclude = [...(TONE_EXCLUDE[String(a.tone)] ?? [])];
+  plan.mustHave = unique([...plan.mustHave, ...needs]);
   return plan;
 }
 
 /** Rules that always apply, whatever Gemini said. */
 function enforce(plan: Plan, a: Answers): Plan {
   const picked = asList(a.genres);
-  const allowAnimation = picked.includes("animation") || a.who === "kids";
+  const allowAnimation = allowsAnimation(a);
   const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
   const strip = (ids: number[]) => unique(allowAnimation ? ids : ids.filter((g) => g !== ANIMATION)).filter((g) => !avoid.includes(g));
 
@@ -223,10 +232,10 @@ async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boo
     "Rules:",
     "- Be precise and never pad the list. A request for scary or horror movies means only the Horror genre; do not add Action or Thriller to it.",
     '- "genres" are genres every result must belong to. Use genreMatch "all" for a blend such as horror comedy, otherwise "any".',
-    '- "excludeGenres" lists genres that clash with the requested mood or tone.',
-    "- Never include Animation unless the user asked for animation or kids are watching.",
+    '- "excludeGenres" lists genres that clash with the requested mood.',
+    "- Never include Animation unless the user asked for animation, anime or kids, or kids are watching.",
     '- "keywords": at most 3 short TMDB keywords for a specific theme the user clearly implied (for example "twist ending", "slasher"), otherwise [].',
-    "- Form keys: who (solo, partner, friends, kids), mood, genres, tone (dark to funny), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
+    "- Form keys: who (solo, partner, friends, kids), mood, genres (kids = family friendly, anime = Japanese animation), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
   ].join("\n");
 
   const raw = (await geminiJson(system, JSON.stringify(a))) as Record<string, unknown> | null;
@@ -259,6 +268,75 @@ function mergePlan(rule: Plan, ai: Partial<Plan>): Plan {
   return plan;
 }
 
+/* ---------- Star rating (the TMDB score out of 10, shown with one decimal) ---------- */
+// Each pick is a band of the score as the list shows it: "9" = 9.0 and up, "8" = 8.0 to 8.9, and so on.
+const STAR_BANDS: Record<string, [number, number]> = { "9": [9, 10], "8": [8, 8.9], "7": [7, 7.9], "6": [6, 6.9] };
+const r2 = (n: number) => Number(n.toFixed(2));
+
+function starBands(a: Answers): [number, number][] {
+  return asList(a.stars).filter((k) => Object.prototype.hasOwnProperty.call(STAR_BANDS, k)).map((k) => STAR_BANDS[k]);
+}
+
+/** Lowest score the API should return for the picked bands (a little under, because scores are rounded to one decimal). 0 = no pick. */
+function starFloor(a: Answers): number {
+  const bands = starBands(a);
+  return bands.length ? r2(Math.min(...bands.map((b) => b[0])) - 0.05) : 0;
+}
+
+/**
+ * Exact check for every movie. TMDB can only filter one range (lowest to highest pick), so picks with a gap,
+ * like 9+ and 6-6.9, would let the scores in between through. Uses the same rounding as the score on screen.
+ */
+function starFilter(a: Answers): ((m: TmdbMovie) => boolean) | undefined {
+  const bands = starBands(a);
+  if (!bands.length) return undefined;
+  return (m) => {
+    const score = Number((m.vote_average ?? 0).toFixed(1));
+    return bands.some(([lo, hi]) => score >= lo && score <= hi);
+  };
+}
+
+/** Checks every candidate, whatever its source: the picked star bands, and Japanese originals for anime. */
+function movieFilter(a: Answers): ((m: TmdbMovie) => boolean) | undefined {
+  const stars = starFilter(a);
+  const anime = asList(a.genres).includes("anime");
+  if (!stars && !anime) return undefined;
+  return (m) => (!stars || stars(m)) && (!anime || m.original_language === "ja");
+}
+
+/* ---------- Age ratings (US certifications) ---------- */
+const RATING_ORDER = ["G", "PG", "PG-13", "R", "NC-17"];
+
+/** The age ratings the user picked, in order. With kids watching only G and PG can apply (the kids rule stays on). */
+function ratingPicks(a: Answers): string[] {
+  const picks = RATING_ORDER.filter((r) => asList(a.ratings).includes(r));
+  return kidsMode(a) ? picks.filter((r) => r === "G" || r === "PG") : picks;
+}
+
+/** TMDB filters a range (from the lowest pick to the highest). A gap, like G + R, lets PG and PG-13 in, so those picks are checked one by one. */
+function ratingGap(a: Answers): Set<string> | null {
+  const picks = ratingPicks(a);
+  if (picks.length < 2) return null;
+  const first = RATING_ORDER.indexOf(picks[0]);
+  const last = RATING_ORDER.indexOf(picks[picks.length - 1]);
+  return last - first + 1 === picks.length ? null : new Set(picks);
+}
+
+async function usRating(id: number): Promise<string> {
+  try {
+    const d = await tmdb<ExtrasPayload>(`/movie/${id}`, { append_to_response: "release_dates" });
+    return d.release_dates?.results.find((x) => x.iso_3166_1 === "US")?.release_dates.find((r) => r.certification)?.certification ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Keeps only the movies whose US age rating is one of the allowed ones. */
+async function keepRated(list: TmdbMovie[], allowed: Set<string>): Promise<TmdbMovie[]> {
+  const ratings = await Promise.all(list.map((m) => usRating(m.id)));
+  return list.filter((_, i) => allowed.has(ratings[i]));
+}
+
 /* ---------- TMDB query + page loop ---------- */
 function baseParams(a: Answers, plan: Plan): Params {
   const taste = asList(a.taste);
@@ -269,12 +347,27 @@ function baseParams(a: Answers, plan: Plan): Params {
     sort_by: plan.sortBy ?? "popularity.desc",
     "vote_average.gte": plan.minRating ?? (a.energy === "focus" ? 7.3 : 6.3),
   };
-  if (a.who === "kids") { p.certification_country = "US"; p["certification.lte"] = "PG"; }
+  if (kidsMode(a)) { p.certification_country = "US"; p["certification.lte"] = "PG"; }
+  if (asList(a.genres).includes("anime")) p.with_original_language = "ja"; // anime = Japanese animation
+  const ratingList = ratingPicks(a);
+  if (ratingList.length) {
+    p.certification_country = "US";
+    p["certification.gte"] = ratingList[0];
+    p["certification.lte"] = ratingList[ratingList.length - 1];
+  }
   if (a.time === "short") p["with_runtime.lte"] = 90;
   if (a.time === "medium") { p["with_runtime.gte"] = 85; p["with_runtime.lte"] = 130; }
   if (a.novelty === "familiar") { p.sort_by = "vote_average.desc"; p["vote_count.gte"] = 5000; }
   if (taste.includes("gem")) { p["vote_count.gte"] = 300; p["vote_count.lte"] = 4000; p["vote_average.gte"] = 7; p.sort_by = "vote_average.desc"; }
   if (taste.includes("classic")) { p["vote_count.gte"] = 8000; p.sort_by = "vote_average.desc"; }
+
+  const bands = starBands(a);
+  if (bands.length) {
+    // An explicit star pick replaces the default quality floor.
+    p["vote_average.gte"] = starFloor(a);
+    const top = Math.max(...bands.map((b) => b[1]));
+    if (top < 10) p["vote_average.lte"] = r2(top + 0.05);
+  }
 
   const providers = asList(a.platform).filter((x) => x !== "any");
   if (providers.length) p.with_watch_providers = providers.join("|");
@@ -308,7 +401,7 @@ function isValid(m: TmdbMovie, plan: Plan): boolean {
 const GENERIC_PASS = 2;
 
 function globalExclude(a: Answers): number[] {
-  const allowAnimation = asList(a.genres).includes("animation") || a.who === "kids";
+  const allowAnimation = allowsAnimation(a);
   const avoid = asList(a.avoid).map((k) => AVOID[k]).filter(Boolean);
   return unique([DOCUMENTARY, TV_MOVIE, ...(allowAnimation ? [] : [ANIMATION]), ...avoid]);
 }
@@ -317,9 +410,10 @@ interface Pass { params: Params; plan: Plan }
 interface Cursor { pass: number; page: number; plan: Plan; kw: number[] }
 
 function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[] {
-  const near = unique([...plan.mustHave, ...plan.anyOf]);
+  const near = asList(a.genres).includes("anime") ? [ANIMATION] : unique([...plan.mustHave, ...plan.anyOf]); // anime stays animation
   const ex = globalExclude(a);
-  const generic: Params = { ...base, "vote_count.gte": 50, "vote_average.gte": 0, "with_runtime.gte": 70, sort_by: "popularity.desc" };
+  const floor = starFloor(a); // 0 unless stars were picked: the relaxed passes keep the picked star range
+  const generic: Params = { ...base, "vote_count.gte": 50, "vote_average.gte": floor, "with_runtime.gte": 70, sort_by: "popularity.desc" };
   delete generic["vote_count.lte"];
   delete generic["with_runtime.lte"];
   delete generic.with_genres;
@@ -327,7 +421,7 @@ function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[]
   generic.without_genres = ex.join(",");
   return [
     { params: kw.length ? { ...base, with_keywords: kw.join("|") } : base, plan },
-    { params: { ...base, "vote_count.gte": 100, "vote_average.gte": 0 }, plan },
+    { params: { ...base, "vote_count.gte": 100, "vote_average.gte": floor }, plan },
     { params: generic, plan: { mustHave: [], anyOf: near, exclude: ex, keywords: [] } },
   ];
 }
@@ -336,7 +430,7 @@ async function collect(
   passes: Pass[],
   start: { pass: number; page: number },
   seen: Set<number>,
-  opts: { target: number; maxScan: number; allowGeneric: boolean }
+  opts: { target: number; maxScan: number; allowGeneric: boolean; accept?: (m: TmdbMovie) => boolean; verify?: (list: TmdbMovie[]) => Promise<TmdbMovie[]> }
 ): Promise<{ found: TmdbMovie[]; next: { pass: number; page: number } | null }> {
   const found: TmdbMovie[] = [];
   let { pass, page } = start;
@@ -353,10 +447,14 @@ async function collect(
       else page = 1; // the random start was past the last page
       continue;
     }
+    const candidates: TmdbMovie[] = [];
     for (const m of r.results) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
-      if (isValid(m, passes[pass].plan)) found.push(m);
+      if (isValid(m, passes[pass].plan) && (!opts.accept || opts.accept(m))) candidates.push(m);
+    }
+    for (const m of opts.verify ? await opts.verify(candidates) : candidates) {
+      found.push(m);
       if (found.length >= opts.target) return { found, next: { pass, page } }; // resume on this page next time
     }
     if (page >= r.total_pages) { pass++; page = 1; }
@@ -405,7 +503,11 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
       if (e) e.n++;
       else tally.set(m.id, { m, n: 1 });
     }
-  const ranked = [...tally.values()].sort((x, y) => y.n - x.n || y.m.vote_average - x.m.vote_average).map((e) => e.m);
+  const byFilter = movieFilter(a);
+  const unfiltered = [...tally.values()].sort((x, y) => y.n - x.n || y.m.vote_average - x.m.vote_average).map((e) => e.m);
+  const starred = byFilter ? unfiltered.filter(byFilter) : unfiltered;
+  const agePicks = ratingPicks(a);
+  const ranked = agePicks.length ? await keepRated(starred.slice(0, 60), new Set(agePicks)) : starred; // recommendations carry no age rating, so check it here
 
   const { from, to } = yearRange(a);
   const inYears = (m: TmdbMovie) => {
@@ -480,6 +582,8 @@ async function search(
     target: TARGET,
     maxScan: resume ? 10 : MAX_PAGES,
     allowGeneric: !!resume, // the generic fallback only runs for "show more"
+    accept: movieFilter(a),
+    verify: (() => { const gap = ratingGap(a); return gap ? (list: TmdbMovie[]) => keepRated(list, gap) : undefined; })(),
   });
   return { movies: found.map((m) => toMovie(m, g)), cursor: next ? { ...next, plan, kw } : null };
 }

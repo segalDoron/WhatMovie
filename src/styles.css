@@ -421,3 +421,16 @@ li.has-remove { position: relative; }
 }
 .pm-trash:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .pm-trash:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+/* ---------- Sort by rating ---------- */
+.list-tools { width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 16px 8px; display: flex; justify-content: flex-end; }
+.sort {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 700; font-size: .9rem;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.sort:hover { border-color: var(--primary); }
+.sort[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* ---------- Profile button: first letter of the user's name ---------- */
+.initial { font-family: "Bricolage Grotesque", "DM Sans", sans-serif; font-weight: 800; font-size: 1.15rem; line-height: 1; text-transform: uppercase; }
