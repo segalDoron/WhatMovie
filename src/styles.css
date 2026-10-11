@@ -434,3 +434,5 @@ li.has-remove { position: relative; }
 
 /* ---------- Profile button: first letter of the user's name ---------- */
 .initial { font-family: "Bricolage Grotesque", "DM Sans", sans-serif; font-weight: 800; font-size: 1.15rem; line-height: 1; text-transform: uppercase; }
+/* Mobile menu: a circle around the letter. (On desktop the button itself is already the circle.) */
+.menu-btn .initial { box-sizing: border-box; width: 30px; height: 30px; display: grid; place-items: center; border: 2px solid currentColor; border-radius: 50%; font-size: .95rem; }

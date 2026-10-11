@@ -17,6 +17,15 @@ const GUEST_ID = 9999; // reserved for the guest user
 
 export const isGuest = (u: Pick<UserInfo, "id">): boolean => u.id === GUEST_ID;
 
+const newGuest = (): UserInfo => ({
+  id: GUEST_ID,
+  name: "Guest",
+  isActive: true,
+  favorites: [],
+  searchHistory: [],
+  votes: { like: [], dislike: [] },
+});
+
 /** First letter of the first name, capitalised: "eli cohen" -> "E". */
 export function initialOf(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? "";
@@ -87,32 +96,19 @@ export const users = {
   getActive: (): UserInfo | undefined => users.getAll().find((u) => u.isActive),
 
   /**
-   * App start.
-   * - The guest always exists and starts empty: guest data is cleared on every load.
-   * - If there is a user other than the guest, one of them is active: the one that was already active,
-   *   otherwise the first one. With no other user, the guest is active.
+   * App start. The guest exists only while there is no real user.
+   * - No real user: a fresh, empty guest is active (guest data is cleared on every load).
+   * - A real user exists: no guest is created, and a guest left over from before is dropped.
+   *   The active user is the one that was already active, otherwise the first one.
    */
   startUp() {
-    const list = users.getAll();
-    const real = list.filter((u) => !isGuest(u));
-    const activeId = (real.find((u) => u.isActive) ?? real[0])?.id ?? GUEST_ID;
-
-    const old = list.find(isGuest);
-    const guest: UserInfo = {
-      id: GUEST_ID,
-      name: old?.name ?? "Guest",
-      isActive: activeId === GUEST_ID,
-      favorites: [],
-      searchHistory: [],
-      votes: { like: [], dislike: [] },
-    };
-    const others = list.filter((u) => !isGuest(u)).map((u) => ({ ...u, isActive: u.id === activeId }));
-    // Keep the order the users already had; a brand new guest goes first.
-    const next = old ? list.map((u) => (isGuest(u) ? guest : { ...u, isActive: u.id === activeId })) : [guest, ...others];
-    commit(next);
+    const real = users.getAll().filter((u) => !isGuest(u));
+    if (!real.length) return commit([newGuest()]);
+    const activeId = (real.find((u) => u.isActive) ?? real[0]).id;
+    commit(real.map((u) => ({ ...u, isActive: u.id === activeId })));
   },
 
-  /** All users become inactive, the new one is added as the active user. */
+  /** All users become inactive, the new one is added as the active user (and replaces the guest). */
   add(name: string): UserInfo {
     const list = users.getAll();
     const user: UserInfo = {
@@ -123,7 +119,8 @@ export const users = {
       searchHistory: [],
       votes: { like: [], dislike: [] },
     };
-    commit([...list.map((u) => ({ ...u, isActive: false })), user]);
+    // The guest only stands in while there is no real user.
+    commit([...list.filter((u) => !isGuest(u)).map((u) => ({ ...u, isActive: false })), user]);
     return user;
   },
 
@@ -138,7 +135,8 @@ export const users = {
     const list = users.getAll();
     if (!list.some((u) => u.id === id)) return;
     const rest = list.filter((u) => u.id !== id);
-    if (!rest.length || rest.some((u) => u.isActive)) return commit(rest);
+    if (!rest.length) return commit([newGuest()]); // nobody left: back to an empty guest so saving keeps working
+    if (rest.some((u) => u.isActive)) return commit(rest);
     const next = (rest.find((u) => !isGuest(u)) ?? rest[0]).id; // a real user first, the guest only if nobody else is left
     commit(rest.map((u) => ({ ...u, isActive: u.id === next })));
   },

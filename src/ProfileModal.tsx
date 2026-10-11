@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Close, SelectIcon, Trash } from "./Icons";
-import { users } from "./users";
+import { users, isGuest } from "./users";
 import { useUsers } from "./useUsers";
 
 type View = "name" | "new" | "change";
@@ -80,14 +80,16 @@ function UserList({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: ()
                   <span className="pm-user-name">{u.name}</span>
                   <SelectIcon filled={isSelected} />
                 </button>
-                <button
-                  type="button"
-                  className="pm-trash"
-                  aria-label={`Remove ${u.name}`}
-                  onClick={() => remove(u.id)}
-                >
-                  <Trash />
-                </button>
+                {!isGuest(u) && (
+                  <button
+                    type="button"
+                    className="pm-trash"
+                    aria-label={`Remove ${u.name}`}
+                    onClick={() => remove(u.id)}
+                  >
+                    <Trash />
+                  </button>
+                )}
               </div>
             </li>
           );
