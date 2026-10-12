@@ -1,0 +1,9 @@
+/* ---------- Sync notice (shown when a change could not be saved to the account). Merge into src/styles.css. ---------- */
+.sync-note {
+  position: absolute; left: 16px; right: 16px; bottom: 72px; z-index: 36; margin: 0 auto; max-width: var(--col);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 10px 10px 16px; border-radius: 14px; background: var(--ink); color: var(--bg);
+  font-weight: 700; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+}
+@media (min-width: 768px) { .sync-note { bottom: 16px; } }
+.sync-note .x { flex: none; background: transparent; color: inherit; border-color: currentColor; }

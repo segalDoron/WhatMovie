@@ -5,20 +5,18 @@ import ResultsList from "./ResultsList";
 import MovieDetail from "./MovieDetail";
 import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
-import ProfileModal from "./ProfileModal";
-import { users, isGuest, initialOf } from "./users";
+import LoginModal from "./LoginModal";
+import AccountModal from "./AccountModal";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
-import { Heart, ChevronRight, Clock, User } from "./Icons";
-import { useFavorites } from "./useFavorites";
-import { useSearchHistory } from "./useSearchHistory";
-import { useUsers } from "./useUsers";
-import { searchHistory, type SavedSearch } from "./searchHistory";
+import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
+import { useAuth } from "./AuthProvider";
+import { useUserData, type Favorite, type SavedSearch } from "./userData";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
 import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
-import type { Favorite } from "./favorites";
 import type { Answers, Movie, View } from "./types";
+import "./styles-additions.css";
 
 type Theme = "light" | "dark";
 type NavState = {
@@ -38,6 +36,8 @@ type Panel = "favorites" | "history"; // what the bottom sheet (mobile) / side d
 // `inert` removes a hidden layer from tab order and screen readers.
 const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
 
+const initialOf = (text: string): string => ([...text.trim()][0] ?? "").toUpperCase();
+
 function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("theme") as Theme | null;
@@ -56,16 +56,32 @@ function useTheme(): [Theme, () => void] {
  * pages and closes only with its close button, the dimmed area outside it, or Escape (closing never changes the page).
  * UI back buttons call history.back(), so the native back button and the UI always walk the same stack.
  * popstate is the single place that updates the view.
+ * The app works without signing in. The login modal can be closed; signed-out data stays on the page until refresh.
  */
 export default function App() {
   const [theme, toggleTheme] = useTheme();
-  const favorites = useFavorites();
-  const searches = useSearchHistory();
-  const activeUser = useUsers().find((u) => u.isActive);
-  // Profile button: the first letter of the first name for a real user, the user icon for the guest.
-  const named = activeUser && !isGuest(activeUser) ? activeUser : null;
-  const profileFace = named ? <span className="initial" aria-hidden="true">{initialOf(named.name)}</span> : <User />;
-  const profileLabel = named ? `Profile: ${named.name}` : "Profile";
+  const { user, loading: authLoading, expired } = useAuth();
+  const [accountOpen, setAccountOpen] = useState(false);
+  // Signing out (from the account modal or elsewhere) closes it, so it does not reopen at the next sign-in.
+  useEffect(() => {
+    if (!user) setAccountOpen(false);
+  }, [user]);
+  const { favorites, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+
+  const [loginDismissed, setLoginDismissed] = useState(false);
+  const loginOpen = !authLoading && !user && !loginDismissed;
+  // An expired session brings the login modal back, even if it was closed earlier.
+  useEffect(() => {
+    if (expired) setLoginDismissed(false);
+  }, [expired]);
+
+  const profileFace = user?.email ? <span className="initial" aria-hidden="true">{initialOf(user.email)}</span> : <User />;
+  const profileLabel = user?.email ? `Account: ${user.email}` : "Sign in";
+  const onAccount = () => {
+    if (!user) return setLoginDismissed(false);
+    setAccountOpen(true);
+  };
+
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
   const [sortByRating, setSortByRating] = useState(false); // list order: best match first, or highest rating first
@@ -75,8 +91,6 @@ export default function App() {
   const [selected, setSelected] = useState<Movie | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [opening, setOpening] = useState(false); // waiting for a details page's images
-  // "Who am I?" modal: open on load when there are no users yet.
-  const [profileOpen, setProfileOpen] = useState(false); // guest auto-creates, profile modal not auto-open
   const [panel, setPanel] = useState<Panel | null>(null); // which list is open (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const sheetShown = panel !== null && !isDesktop; // mobile: bottom sheet
@@ -99,10 +113,6 @@ export default function App() {
   const detailRef = useRef<HTMLElement>(null);
   const pendingSearch = useRef<Answers | null>(null); // a search to run as soon as we are back on the form
   const submitRef = useRef<(answers: Answers) => void>(() => {});
-
-  useEffect(() => {
-    users.startUp(); // guest starts empty; a real user (if any) is the active one
-  }, []);
 
   useEffect(() => {
     detailRef.current?.scrollTo({ top: 0 }); // a new movie always starts at the top
@@ -162,7 +172,7 @@ export default function App() {
 
   const submit: React.ComponentProps<typeof QuestionForm>["onSubmit"] = async (answers) => {
     const id = ++requestId.current;
-    searchHistory.add(answers); // keeps the last 5 searches
+    addSearch(answers); // keeps the last 5 searches
     pushNav({ view: "loading" });
     setView("loading");
     try {
@@ -284,13 +294,13 @@ export default function App() {
   const panelLabel = shownPanel === "history" ? "Recent searches" : "Favorites";
   const panelBody =
     shownPanel === "history" ? (
-      <HistoryContent items={searches} onClose={closePanel} onPick={rerun} onRemove={(id) => searchHistory.remove(id)} />
+      <HistoryContent items={searches} onClose={closePanel} onPick={rerun} onRemove={removeSearch} />
     ) : (
       <FavoritesContent items={favorites} loading={favLoading} error={favError} onClose={closePanel} onPick={openFavorite} />
     );
 
   return (
-    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(profileOpen)}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -299,12 +309,7 @@ export default function App() {
 
           {isDesktop && (
             <>
-              <button
-                className="profile-top"
-                onClick={() => setProfileOpen(true)}
-                aria-haspopup="dialog"
-                aria-label={profileLabel}
-              >
+              <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
                 {profileFace}
               </button>
               <button
@@ -376,6 +381,15 @@ export default function App() {
           )}
         </div>
 
+        {syncError && (
+          <div className="sync-note" role="status">
+            <span>{syncError}</span>
+            <button className="x" onClick={dismissSyncError} aria-label="Dismiss">
+              <Close />
+            </button>
+          </div>
+        )}
+
         {/* Mobile only: menu bar on every screen, above the sheet and the details page. Buttons are spread evenly. */}
         {!isDesktop && (
           <nav className="menu" aria-label="Main menu">
@@ -400,7 +414,7 @@ export default function App() {
               <Heart filled={favorites.length > 0} />
               {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
             </button>
-            <button type="button" className="menu-btn" onClick={() => setProfileOpen(true)} aria-haspopup="dialog" aria-label={profileLabel}>
+            <button type="button" className="menu-btn" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
               {profileFace}
             </button>
           </nav>
@@ -413,7 +427,8 @@ export default function App() {
         <BottomSheet open={panel !== null} label={panelLabel} onClose={closePanel}>{panelBody}</BottomSheet>
       )}
 
-      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
+      {loginOpen && <LoginModal expired={expired} onDismiss={() => setLoginDismissed(true)} />}
+      {accountOpen && user && <AccountModal onClose={() => setAccountOpen(false)} />}
     </div>
   );
 }

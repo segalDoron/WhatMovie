@@ -1,4 +1,4 @@
-import type { SavedSearch } from "./searchHistory";
+import type { SavedSearch } from "./userData";
 import { describeSearch } from "./describeSearch";
 import { Clock, Close } from "./Icons";
 
