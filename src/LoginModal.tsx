@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "./supabase";
 import { Close } from "./Icons";
+import "./login-modal.css";
 
 type Mode = "magic" | "password" | "signup";
 

@@ -15,6 +15,7 @@ import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
 import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
 import type { Answers, Movie, View } from "./types";
+import "./styles-additions.css";
 
 type Theme = "light" | "dark";
 type NavState = {
