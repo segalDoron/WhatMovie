@@ -6,6 +6,7 @@ import MovieDetail from "./MovieDetail";
 import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
 import LoginModal from "./LoginModal";
+import AccountModal from "./AccountModal";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
 import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
@@ -59,7 +60,12 @@ function useTheme(): [Theme, () => void] {
  */
 export default function App() {
   const [theme, toggleTheme] = useTheme();
-  const { user, loading: authLoading, expired, signOut } = useAuth();
+  const { user, loading: authLoading, expired } = useAuth();
+  const [accountOpen, setAccountOpen] = useState(false);
+  // Signing out (from the account modal or elsewhere) closes it, so it does not reopen at the next sign-in.
+  useEffect(() => {
+    if (!user) setAccountOpen(false);
+  }, [user]);
   const { favorites, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
 
   const [loginDismissed, setLoginDismissed] = useState(false);
@@ -73,7 +79,7 @@ export default function App() {
   const profileLabel = user?.email ? `Account: ${user.email}` : "Sign in";
   const onAccount = () => {
     if (!user) return setLoginDismissed(false);
-    if (window.confirm(`Sign out ${user.email}?`)) void signOut();
+    setAccountOpen(true);
   };
 
   const [view, setView] = useState<View>("form");
@@ -294,7 +300,7 @@ export default function App() {
     );
 
   return (
-    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen)}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -422,6 +428,7 @@ export default function App() {
       )}
 
       {loginOpen && <LoginModal expired={expired} onDismiss={() => setLoginDismissed(true)} />}
+      {accountOpen && user && <AccountModal onClose={() => setAccountOpen(false)} />}
     </div>
   );
 }

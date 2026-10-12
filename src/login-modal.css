@@ -1,10 +1,10 @@
-/* ---------- Login modal (Supabase auth). Merge into src/styles.css. ---------- */
+/* ---------- Login modal (Supabase auth) ---------- */
 .lm-backdrop {
   position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px;
   background: rgba(5, 25, 32, .6); animation: fadein .2s;
 }
 .lm {
-  width: min(100%, 420px); max-height: 90dvh; overflow-y: auto; border-radius: 20px;
+  width: min(100%, 470px); min-height: 382px; max-height: 90dvh; overflow-y: auto; border-radius: 20px;
   background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
   animation: lm-in .35s cubic-bezier(.2, .8, .2, 1);
 }
@@ -22,4 +22,11 @@
 .lm-error { color: var(--accent); }
 .lm-info { color: var(--ink); }
 .lm-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 22px 22px; }
-.lm-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.lm-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
+.lm-rules li::before { content: "○  "; }
+.lm-rules li[data-ok="true"] { color: var(--ink); font-weight: 700; }
+.lm-rules li[data-ok="true"]::before { content: "●  "; color: var(--primary); }
+.lm-footer {
+  display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 10px;
+  margin-top: 64px;
+}

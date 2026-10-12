@@ -13,6 +13,16 @@ interface Props {
 
 const TITLES: Record<Mode, string> = { magic: "Sign in with email", password: "Sign in", signup: "Create account" };
 
+/** Rules for a strong password on sign-up. Stricter than the Supabase policy, so anything accepted here is accepted there. */
+const PASSWORD_RULES: { label: string; test: (p: string) => boolean }[] = [
+  { label: "At least 8 characters", test: (p) => p.length >= 8 },
+  { label: "An uppercase letter (A–Z)", test: (p) => /[A-Z]/.test(p) },
+  { label: "A lowercase letter (a–z)", test: (p) => /[a-z]/.test(p) },
+  { label: "A number (0–9)", test: (p) => /\d/.test(p) },
+  { label: "A symbol (for example ! @ # $ %)", test: (p) => /[^A-Za-z0-9]/.test(p) },
+];
+const isStrongPassword = (p: string) => PASSWORD_RULES.every((r) => r.test(p));
+
 export default function LoginModal({ expired, onDismiss }: Props) {
   const [mode, setMode] = useState<Mode>("magic");
   const [email, setEmail] = useState("");
@@ -41,7 +51,7 @@ export default function LoginModal({ expired, onDismiss }: Props) {
     const address = email.trim();
     if (!address) return setError("Enter your email.");
     if (mode !== "magic" && !password) return setError("Enter your password.");
-    if (mode === "signup" && password.length < 8) return setError("Use at least 8 characters.");
+    if (mode === "signup" && !isStrongPassword(password)) return setError("This is not a strong password. Meet every rule below.");
 
     setBusy(true);
     const redirect = { emailRedirectTo: window.location.origin };
@@ -111,6 +121,15 @@ export default function LoginModal({ expired, onDismiss }: Props) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+          )}
+          {mode === "signup" && (
+            <ul className="lm-rules" aria-label="Password rules">
+              {PASSWORD_RULES.map((r) => (
+                <li key={r.label} data-ok={r.test(password)}>
+                  {r.label}
+                </li>
+              ))}
+            </ul>
           )}
           {error && <p className="lm-error" role="alert">{error}</p>}
           {info && <p className="lm-info" role="status">{info}</p>}
