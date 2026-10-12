@@ -11,6 +11,13 @@ interface Props {
   onDismiss?: () => void; // when given, the modal can be closed (X button, Escape). Omit it to require sign-in.
 }
 
+/**
+ * Email delivery switch. While email is not set up (no custom SMTP, "Confirm email" off in Supabase), keep this false:
+ * the "Email link" tab is hidden, Password is the default, and sign-up signs the user in at once.
+ * When email works, set it to true and turn "Confirm email" back on in Supabase.
+ */
+const EMAIL_ENABLED = false;
+
 const TITLES: Record<Mode, string> = { magic: "Sign in with email", password: "Sign in", signup: "Create account" };
 
 /** Rules for a strong password on sign-up. Stricter than the Supabase policy, so anything accepted here is accepted there. */
@@ -24,7 +31,7 @@ const PASSWORD_RULES: { label: string; test: (p: string) => boolean }[] = [
 const isStrongPassword = (p: string) => PASSWORD_RULES.every((r) => r.test(p));
 
 export default function LoginModal({ expired, onDismiss }: Props) {
-  const [mode, setMode] = useState<Mode>("magic");
+  const [mode, setMode] = useState<Mode>(EMAIL_ENABLED ? "magic" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,7 +74,7 @@ export default function LoginModal({ expired, onDismiss }: Props) {
     } else {
       const r = await supabase.auth.signUp({ email: address, password, options: redirect });
       message = r.error?.message ?? null;
-      if (!message) setInfo("Check your email to confirm your account, then sign in.");
+      if (!message && EMAIL_ENABLED) setInfo("Check your email to confirm your account, then sign in.");
     }
 
     setBusy(false);
@@ -88,7 +95,7 @@ export default function LoginModal({ expired, onDismiss }: Props) {
           )}
         </header>
 
-        {mode !== "signup" && (
+        {EMAIL_ENABLED && mode !== "signup" && (
           <div className="lm-tabs" role="tablist">
             <button role="tab" className="lm-tab" aria-selected={mode === "magic"} onClick={() => switchMode("magic")}>
               Email link
