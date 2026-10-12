@@ -5,6 +5,7 @@
 }
 .lm {
   width: min(100%, 470px); min-height: 382px; max-height: 90dvh; overflow-y: auto; border-radius: 20px;
+  display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
   animation: lm-in .35s cubic-bezier(.2, .8, .2, 1);
 }
@@ -17,16 +18,17 @@
   background: var(--surface); font-weight: 700;
 }
 .lm-tab[aria-selected="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-.lm-notice, .lm-error, .lm-info { margin: 12px 22px 0; font-weight: 700; }
+.lm-notice, .lm-error, .lm-info { margin: 12px 0 0 22px; font-weight: 700; }
 .lm-notice { color: var(--muted); }
 .lm-error { color: var(--accent); }
 .lm-info { color: var(--ink); }
-.lm-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 22px 22px; }
+.lm-body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 16px 22px 22px; }
 .lm-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
 .lm-rules li::before { content: "○  "; }
 .lm-rules li[data-ok="true"] { color: var(--ink); font-weight: 700; }
 .lm-rules li[data-ok="true"]::before { content: "●  "; color: var(--primary); }
+/* Always at the bottom of the modal. The 64px top padding is the minimum gap above the buttons. */
 .lm-footer {
+  margin-top: auto; padding-top: 64px;
   display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 10px;
-  margin-top: 64px;
 }
