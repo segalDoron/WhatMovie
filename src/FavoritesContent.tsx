@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
-import type { Favorite } from "./favorites";
+import type { Favorite } from "./userData";
 import MovieRow from "./MovieRow";
-import { favorites } from "./favorites";
+import { useUserData } from "./userData";
 import { Close } from "./Icons";
 
 export interface FavoritesContentProps {
@@ -15,6 +15,7 @@ export interface FavoritesContentProps {
 
 /** Header, scrollable list and loader. Shared by the mobile sheet and the desktop drawer. */
 export default function FavoritesContent({ items, loading, error, onClose, onPick, closeRef }: FavoritesContentProps) {
+  const { removeFavorite } = useUserData();
   return (
     <>
       <header className="sheet-head">
@@ -33,7 +34,7 @@ export default function FavoritesContent({ items, loading, error, onClose, onPic
         ) : (
           <ul className="list">
             {items.map((f) => (
-              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} onRemove={() => favorites.toggle(f)} />
+              <MovieRow key={f.id} movie={f} onOpen={() => onPick(f)} onRemove={() => removeFavorite(f.id)} />
             ))}
           </ul>
         )}

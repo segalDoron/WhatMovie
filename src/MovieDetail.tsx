@@ -2,10 +2,7 @@ import { useEffect, useState } from "react";
 import type { Movie } from "./types";
 import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play } from "./Icons";
 import { fetchCast, fetchTrailer, type CastMember } from "./api";
-import { favorites } from "./favorites";
-import { useFavorites } from "./useFavorites";
-import { votes } from "./votes";
-import { useVotes } from "./useVotes";
+import { useUserData } from "./userData";
 import TrailerModal from "./TrailerModal";
 
 interface Props {
@@ -28,9 +25,8 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const voted = useVotes(); // like / dislike, saved in localStorage under the "vote" key
-  const favs = useFavorites();
-  const isFav = !!movie && favs.some((f) => f.id === movie.id);
+  const { votes, isFavorite, toggleFavorite, vote } = useUserData();
+  const isFav = !!movie && isFavorite(movie.id);
 
   useEffect(() => {
     if (!movie) return;
@@ -53,8 +49,8 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
     if (!open) setTrailerOpen(false);
   }, [open]);
 
-  const liked = !!movie && voted.like.some((m) => m.id === movie.id);
-  const disliked = !!movie && voted.dislike.some((m) => m.id === movie.id);
+  const liked = !!movie && votes.like.some((m) => m.id === movie.id);
+  const disliked = !!movie && votes.dislike.some((m) => m.id === movie.id);
   const t = tabbable ? 0 : -1;
 
   return (
@@ -73,10 +69,10 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
 
           <div className="actions">
             <div className="reactions" role="group" aria-label="Your reaction">
-              <button className="react like" aria-pressed={liked} aria-label="Like" tabIndex={t} onClick={() => votes.toggle("like", movie)}>
+              <button className="react like" aria-pressed={liked} aria-label="Like" tabIndex={t} onClick={() => vote("like", movie)}>
                 <ThumbUp filled={liked} />
               </button>
-              <button className="react dislike" aria-pressed={disliked} aria-label="Dislike" tabIndex={t} onClick={() => votes.toggle("dislike", movie)}>
+              <button className="react dislike" aria-pressed={disliked} aria-label="Dislike" tabIndex={t} onClick={() => vote("dislike", movie)}>
                 <ThumbDown filled={disliked} />
               </button>
               <button
@@ -84,7 +80,7 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
                 aria-pressed={isFav}
                 aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
                 tabIndex={t}
-                onClick={() => favorites.toggle(movie)}
+                onClick={() => toggleFavorite(movie)}
               >
                 <Heart filled={isFav} />
               </button>

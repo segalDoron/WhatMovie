@@ -1,4 +1,4 @@
-import type { Favorite } from "./favorites";
+import type { Favorite } from "./userData";
 import { Heart, Star } from "./Icons";
 
 interface Props {
