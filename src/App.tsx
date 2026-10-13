@@ -7,6 +7,8 @@ import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
 import LoginModal from "./LoginModal";
 import AccountModal from "./AccountModal";
+import SettingsModal from "./SettingsModal";
+import { getKeyStatus } from "./settingsApi";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
 import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
@@ -60,12 +62,26 @@ function useTheme(): [Theme, () => void] {
  */
 export default function App() {
   const [theme, toggleTheme] = useTheme();
-  const { user, loading: authLoading, expired } = useAuth();
+  const { user, loading: authLoading, expired, justSignedIn, ackSignIn } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
-  // Signing out (from the account modal or elsewhere) closes it, so it does not reopen at the next sign-in.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Signing out (from the account modal or elsewhere) closes them, so they do not reopen at the next sign-in.
   useEffect(() => {
-    if (!user) setAccountOpen(false);
+    if (!user) {
+      setAccountOpen(false);
+      setSettingsOpen(false);
+    }
   }, [user]);
+  // Right after a successful sign-in or sign-up: if no Gemini key is saved yet, open the add-key modal.
+  useEffect(() => {
+    if (!justSignedIn || !user) return;
+    getKeyStatus()
+      .then((s) => {
+        ackSignIn();
+        if (!s.hasKey) setSettingsOpen(true);
+      })
+      .catch(() => ackSignIn());
+  }, [justSignedIn, user, ackSignIn]);
   const { favorites, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
 
   const [loginDismissed, setLoginDismissed] = useState(false);
@@ -300,7 +316,7 @@ export default function App() {
     );
 
   return (
-    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen || settingsOpen)}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -428,7 +444,14 @@ export default function App() {
       )}
 
       {loginOpen && <LoginModal expired={expired} onDismiss={() => setLoginDismissed(true)} />}
-      {accountOpen && user && <AccountModal onClose={() => setAccountOpen(false)} />}
+      {accountOpen && user && (
+        <AccountModal
+          onClose={() => setAccountOpen(false)}
+          onSettings={() => setSettingsOpen(true)}
+          settingsOpen={settingsOpen}
+        />
+      )}
+      {settingsOpen && user && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

@@ -1,13 +1,25 @@
 import type { Answers, Movie } from "./types";
+import { supabase } from "./supabase";
 
 /** Opaque position in the search ("where to continue"). Sent back to the server for "show more". */
 export type Cursor = unknown;
 export interface SearchResult { movies: Movie[]; cursor: Cursor | null }
 
+/** The signed-in user's token, when there is one. Searches work without it; with it the server can use the user's own Gemini key. */
+async function optionalAuth(): Promise<Record<string, string>> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function search(body: object): Promise<SearchResult> {
   const res = await fetch("/api/movies", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await optionalAuth()) },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));

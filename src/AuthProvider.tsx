@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { beginSession, clearCache, endSession, isIdle, EXPIRED_EVENT } from "./session";
@@ -8,6 +8,8 @@ interface AuthValue {
   session: Session | null;
   user: User | null;
   expired: boolean; // the last session ended because of the 30-minute rule
+  justSignedIn: boolean; // true after a successful sign-in or sign-up, until acknowledged
+  ackSignIn: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -18,6 +20,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [expired, setExpired] = useState(false);
+  const [justSignedIn, setJustSignedIn] = useState(false);
+  const ackSignIn = useCallback(() => setJustSignedIn(false), []); // stable, so effects that depend on it do not re-run
+  const hadSession = useRef(false); // a sign-in only counts when there was no session before (not a token refresh or tab refocus)
 
   // Sign-in state. Restores a stored session on load, but ends it if the idle window passed while the app was closed.
   useEffect(() => {
@@ -28,13 +33,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       if (!alive) return;
       if (data.session && isIdle()) void endSession();
-      else setSession(data.session);
+      else {
+        hadSession.current = !!data.session;
+        setSession(data.session);
+      }
       setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_OUT") {
         clearCache();
+        hadSession.current = false;
         setSession(null);
         setLoading(false);
         return;
@@ -46,6 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             await beginSession();
             setExpired(false);
+            if (!hadSession.current) setJustSignedIn(true);
+            hadSession.current = true;
             setSession(s);
           } catch {
             await endSession("signout");
@@ -85,7 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ loading, session, user: session?.user ?? null, expired, signOut }}>
+    <AuthContext.Provider
+      value={{ loading, session, user: session?.user ?? null, expired, justSignedIn, ackSignIn, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

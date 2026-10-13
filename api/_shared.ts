@@ -67,3 +67,19 @@ export function decryptKey(stored: string, userId: string): string {
   decipher.setAuthTag(raw.subarray(12, 28));
   return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
 }
+
+/**
+ * The signed-in user's own Gemini key, or null. Never throws and never rejects a request:
+ * no token, an expired session, no saved key or any error all mean "use the server's key instead".
+ */
+export async function userGeminiKey(request: Request): Promise<string | null> {
+  try {
+    if (!request.headers.get("authorization")) return null;
+    const auth = await authenticate(request, { touch: false });
+    if (auth instanceof Response) return null;
+    const { data } = await admin().from("user_settings").select("gemini_key_enc").eq("user_id", auth.user.id).maybeSingle();
+    return data ? decryptKey(data.gemini_key_enc, auth.user.id) : null;
+  } catch {
+    return null;
+  }
+}
