@@ -127,16 +127,18 @@ export default function SettingsModal({ onClose }: Props) {
             </>
           )}
 
-          {error && <p className="sm-error" role="alert">{error}</p>}
-          {note && (
-            <p className={`sm-note sm-note-${note.tone}`} role="status">
-              {note.text}
-            </p>
-          )}
+          {/* One status line that always takes up space, so the buttons never move when a message appears. */}
+          <p
+            className={error ? "sm-status sm-error" : note ? `sm-status sm-note-${note.tone}` : "sm-status"}
+            role="status"
+            aria-live="polite"
+          >
+            {error || note?.text || ""}
+          </p>
 
           <div className="sm-footer">
             {hasKey && (
-              <button type="button" className="secondary" disabled={busy} onClick={() => void run(removeKey, { text: "Key removed", tone: "plain" })}>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void run(removeKey, { text: "Key removed", tone: "ok" })}>
                 Remove key
               </button>
             )}
