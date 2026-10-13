@@ -32,3 +32,19 @@
   margin-top: auto; padding-top: 64px;
   display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 10px;
 }
+
+/* Password field with show / hide button */
+.lm-pass { position: relative; }
+.lm-pass .text { padding-right: 48px; }
+.lm-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 36px; height: 36px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: grid; place-items: center;
+}
+.lm-eye:hover { color: var(--ink); }
+.lm-eye[aria-pressed="true"] { color: var(--accent); }
+
+/* Mobile: the buttons stack in a column */
+@media (max-width: 767px) {
+  .lm-footer { flex-direction: column; align-items: stretch; }
+  .lm-footer > button { width: 100%; }
+}

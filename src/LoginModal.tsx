@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "./supabase";
-import { Close } from "./Icons";
+import { Close, Eye, EyeOff } from "./Icons";
 import "./login-modal.css";
 
 type Mode = "magic" | "password" | "signup";
@@ -34,6 +34,7 @@ export default function LoginModal({ expired, onDismiss }: Props) {
   const [mode, setMode] = useState<Mode>(EMAIL_ENABLED ? "magic" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -119,15 +120,26 @@ export default function LoginModal({ expired, onDismiss }: Props) {
             onChange={(e) => setEmail(e.target.value)}
           />
           {mode !== "magic" && (
-            <input
-              className="text"
-              type="password"
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              placeholder="Password"
-              aria-label="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="lm-pass">
+              <input
+                className="text"
+                type={showPassword ? "text" : "password"}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                placeholder="Password"
+                aria-label="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="lm-eye"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeOff /> : <Eye />}
+              </button>
+            </div>
           )}
           {mode === "signup" && (
             <ul className="lm-rules" aria-label="Password rules">
