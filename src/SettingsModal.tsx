@@ -9,6 +9,13 @@ interface Props {
   onClose: () => void;
 }
 
+interface Note {
+  text: string;
+  tone: "ok" | "plain";
+}
+
+const NOTE_MS = 4000;
+
 /** Add, replace or remove the user's own Gemini API key. The key is encrypted on the server and never shown again. */
 export default function SettingsModal({ onClose }: Props) {
   const [status, setStatus] = useState<KeyStatus | null>(null);
@@ -17,7 +24,7 @@ export default function SettingsModal({ onClose }: Props) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
+  const [note, setNote] = useState<Note | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -36,16 +43,23 @@ export default function SettingsModal({ onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const run = async (action: () => Promise<KeyStatus>, done: string) => {
+  // A note disappears after a few seconds. A new note object restarts the timer, even with the same text.
+  useEffect(() => {
+    if (!note) return;
+    const t = window.setTimeout(() => setNote(null), NOTE_MS);
+    return () => window.clearTimeout(t);
+  }, [note]);
+
+  const run = async (action: () => Promise<KeyStatus>, done: Note) => {
     setBusy(true);
     setError("");
-    setInfo("");
+    setNote(null);
     try {
       setStatus(await action());
       resetAnalysis();
       setValue("");
       setShow(false);
-      setInfo(done);
+      setNote(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     }
@@ -55,7 +69,7 @@ export default function SettingsModal({ onClose }: Props) {
   const save = (e: FormEvent) => {
     e.preventDefault();
     if (!value.trim()) return setError("Paste your Gemini API key.");
-    void run(() => saveKey(value.trim()), "Key saved.");
+    void run(() => saveKey(value.trim()), { text: "Key added", tone: "ok" });
   };
 
   const hasKey = !!status?.hasKey;
@@ -73,15 +87,22 @@ export default function SettingsModal({ onClose }: Props) {
         <form className="sm-body" onSubmit={save}>
           <h3 className="sm-sub">Gemini API key</h3>
           <p className="sm-text">
-            Add your own Google Gemini key to use AI analysis. It is encrypted before it is stored and is never shown again.{" "}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a key</a>
+            Add your key to improve your search results. It is encrypted and never shown again.{" "}
+            <button type="button" className="sm-link" onClick={() => {}}>
+              show more
+            </button>
           </p>
 
           {loading ? (
             <p className="sm-text" role="status">Loading…</p>
           ) : (
             <>
-              {hasKey && <p className="sm-saved">Key saved: •••• {status?.last4}</p>}
+              <div className="sm-row">
+                <span className="sm-label">{hasKey ? `Key saved: •••• ${status?.last4}` : "No key saved"}</span>
+                <a className="sm-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                  Get a key
+                </a>
+              </div>
               <div className="sm-pass">
                 <input
                   className="text"
@@ -107,11 +128,15 @@ export default function SettingsModal({ onClose }: Props) {
           )}
 
           {error && <p className="sm-error" role="alert">{error}</p>}
-          {info && <p className="sm-info" role="status">{info}</p>}
+          {note && (
+            <p className={`sm-note sm-note-${note.tone}`} role="status">
+              {note.text}
+            </p>
+          )}
 
           <div className="sm-footer">
             {hasKey && (
-              <button type="button" className="secondary" disabled={busy} onClick={() => void run(removeKey, "Key removed.")}>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void run(removeKey, { text: "Key removed", tone: "plain" })}>
                 Remove key
               </button>
             )}
