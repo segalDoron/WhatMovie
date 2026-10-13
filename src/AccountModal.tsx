@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "./AuthProvider";
 import { Close } from "./Icons";
+import SettingsModal from "./SettingsModal";
 import "./account-modal.css";
 
 interface Props {
@@ -14,12 +15,15 @@ const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString(
 export default function AccountModal({ onClose }: Props) {
   const { user, signOut } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // While the settings modal is open it handles Escape itself.
   useEffect(() => {
+    if (settingsOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, settingsOpen]);
 
   const logout = async () => {
     setBusy(true);
@@ -55,11 +59,15 @@ export default function AccountModal({ onClose }: Props) {
         <p className="am-note">You are signed out automatically after 30 minutes without activity.</p>
 
         <div className="am-footer">
+          <button className="secondary" onClick={() => setSettingsOpen(true)} disabled={busy}>
+            Settings
+          </button>
           <button className="primary" onClick={logout} disabled={busy}>
             {busy ? "Logging out…" : "Log out"}
           </button>
         </div>
       </div>
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>,
     document.body
   );
