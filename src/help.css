@@ -1,0 +1,34 @@
+/* ---------- Gemini key help page (same palette and fonts as the app) ---------- */
+.hp { width: 100%; max-width: 860px; margin: 0 auto; padding: 16px 20px 72px; display: flex; flex-direction: column; gap: 20px; }
+.hp-top { padding: 8px 0; }
+.hp-top a.back { color: inherit; text-decoration: none; }
+.hp-title { font-size: 2rem; font-weight: 800; }
+.hp-lead { margin: -8px 0 0; color: var(--muted); max-width: 62ch; }
+.hp-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.hp-card h2, .hp-steps-title { font-size: 1.35rem; }
+.hp-card p, .hp-card ul { margin: 0; }
+.hp-card ul { padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+.hp-card p, .hp-card li { max-width: 68ch; }
+.hp-note { color: var(--muted); font-size: .92rem; }
+.hp a:not(.back) { color: var(--accent); font-weight: 700; text-underline-offset: 3px; }
+
+.hp-steps-title { margin: 8px 0 14px; }
+.hp-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.hp-step { display: grid; gap: 16px; align-items: center; background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.hp-step-text { display: flex; gap: 14px; align-items: flex-start; }
+.hp-step h3 { margin: 2px 0 4px; font-family: "Bricolage Grotesque", "DM Sans", sans-serif; font-size: 1.15rem; }
+.hp-step p { margin: 0; color: var(--muted); }
+.hp-num {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: #fff; font-weight: 800;
+}
+.hp-fig { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.hp-fig img { width: 100%; height: auto; border-radius: 12px; border: 1.5px solid var(--line); }
+.hp-fig figcaption { color: var(--muted); font-size: .8rem; }
+
+/* Desktop: text on the left, picture on the right */
+@media (min-width: 768px) {
+  .hp { padding-top: 24px; }
+  .hp-title { font-size: 2.4rem; }
+  .hp-step { grid-template-columns: 1fr 1.1fr; padding: 20px; gap: 24px; }
+}
