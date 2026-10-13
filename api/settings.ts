@@ -1,7 +1,9 @@
 // Saves, reports and removes the user's own Gemini API key. The key is encrypted here and never sent back to the browser.
 import { admin, authenticate, encryptKey, fail, json, GEMINI } from "./_shared.js";
 
-const KEY_SHAPE = /^[A-Za-z0-9_-]{20,200}$/;
+// Only a sanity check (printable characters, no spaces, sane length). Google decides whether the key is real,
+// so a new key format never gets blocked here.
+const KEY_SHAPE = /^[\x21-\x7E]{20,300}$/;
 
 interface KeyStatus { hasKey: boolean; last4: string | null; updatedAt: string | null }
 
