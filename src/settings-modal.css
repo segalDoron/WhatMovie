@@ -4,14 +4,15 @@
   background: rgba(5, 25, 32, .6); animation: fadein .2s;
 }
 .sm {
-  width: min(100%, 470px); max-height: 90dvh; overflow-y: auto; border-radius: 20px;
+  width: min(100%, 470px); height: 384.55px; max-height: 90dvh; overflow-y: auto; border-radius: 20px;
+  display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
   animation: sm-in .35s cubic-bezier(.2, .8, .2, 1);
 }
 @keyframes sm-in { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
 .sm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 6px 22px; }
 .sm-head h2 { font-size: 1.4rem; font-weight: 800; }
-.sm-body { display: flex; flex-direction: column; gap: 12px; padding: 10px 22px 22px; }
+.sm-body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 10px 22px 22px; }
 .sm-sub { margin: 0; font-size: 1.05rem; }
 .sm-text { margin: 0; color: var(--muted); font-size: .92rem; }
 .sm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -31,6 +32,7 @@
 .sm-status { margin: 0; min-height: 1.5em; font-weight: 700; }
 .sm-error { color: var(--accent); }
 .sm-note-ok { color: #1f9d55; }
-.sm-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; }
+/* Always at the bottom of the modal. */
+.sm-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: auto; }
 /* The primary button stays on the right, even when it is the only one. */
 .sm-footer .primary { margin-left: auto; }

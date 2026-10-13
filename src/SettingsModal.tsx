@@ -88,9 +88,9 @@ export default function SettingsModal({ onClose }: Props) {
           <h3 className="sm-sub">Gemini API key</h3>
           <p className="sm-text">
             Add your key to improve your search results. It is encrypted and never shown again.{" "}
-            <button type="button" className="sm-link" onClick={() => {}}>
+            <a className="sm-link" href="/gemini-key.html" target="_blank" rel="noopener noreferrer">
               show more
-            </button>
+            </a>
           </p>
 
           {loading ? (
