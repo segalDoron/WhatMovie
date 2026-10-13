@@ -1,4 +1,4 @@
-p// Vercel serverless function. API keys stay on the server (env vars).
+// Vercel serverless function. API keys stay on the server (env vars).
 import { userGeminiKey } from "./_shared.js";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
