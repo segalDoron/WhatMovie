@@ -16,4 +16,4 @@
 .am-row dt { color: var(--muted); font-size: .85rem; font-weight: 700; }
 .am-row dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .am-note { margin: 16px 22px 0; color: var(--muted); font-size: .9rem; }
-.am-footer { display: flex; justify-content: flex-end; padding: 16px 22px 22px; }
+.am-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 16px 22px 22px; }

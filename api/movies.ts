@@ -1,4 +1,5 @@
 // Vercel serverless function. API keys stay on the server (env vars).
+import { userGeminiKey } from "./_shared.js";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
@@ -169,8 +170,8 @@ function enforce(plan: Plan, a: Answers): Plan {
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
 let cachedModel: string | undefined;
 
-async function listTextModels(signal: AbortSignal): Promise<string[]> {
-  const res = await fetch(`${GEMINI}/models?pageSize=200`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, signal });
+async function listTextModels(signal: AbortSignal, apiKey: string): Promise<string[]> {
+  const res = await fetch(`${GEMINI}/models?pageSize=200`, { headers: { "x-goog-api-key": apiKey }, signal });
   if (!res.ok) return [];
   const data = await res.json();
   const skip = /image|tts|live|audio|embed|imagen|veo|lyria|robotics|computer|learnlm|gemma|deep-research|native|exp/i;
@@ -182,11 +183,14 @@ async function listTextModels(signal: AbortSignal): Promise<string[]> {
 }
 
 /** Calls Gemini and parses its JSON reply. Returns null on any problem (no key, timeout, retired model, bad JSON). */
-async function geminiJson(system: string, user: string): Promise<unknown> {
-  if (!process.env.GEMINI_API_KEY) return null;
+// userKey: the signed-in user's own key. Without one, the server's GEMINI_API_KEY is used. The model cache is only shared for the server key.
+async function geminiJson(system: string, user: string, userKey?: string | null): Promise<unknown> {
+  const apiKey = userKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  const shared = !userKey;
   const deadline = Date.now() + 6000;
   const signal = () => AbortSignal.timeout(Math.max(500, deadline - Date.now()));
-  const queue = [process.env.GEMINI_MODEL, cachedModel].filter(Boolean) as string[];
+  const queue = [process.env.GEMINI_MODEL, shared ? cachedModel : undefined].filter(Boolean) as string[];
   const tried: string[] = [];
   let listed = false;
   try {
@@ -194,7 +198,7 @@ async function geminiJson(system: string, user: string): Promise<unknown> {
       if (!queue.length) {
         if (listed) break;
         listed = true;
-        queue.push(...(await listTextModels(signal())));
+        queue.push(...(await listTextModels(signal(), apiKey)));
         if (!queue.length) break;
       }
       const model = queue.shift()!;
@@ -203,7 +207,7 @@ async function geminiJson(system: string, user: string): Promise<unknown> {
       const res = await fetch(`${GEMINI}/models/${model}:generateContent`, {
         method: "POST",
         signal: signal(),
-        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: "user", parts: [{ text: user }] }],
@@ -211,11 +215,11 @@ async function geminiJson(system: string, user: string): Promise<unknown> {
         }),
       });
       if (res.ok) {
-        cachedModel = model;
+        if (shared) cachedModel = model;
         const data = await res.json();
         return JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "null");
       }
-      if (model === cachedModel) cachedModel = undefined;
+      if (shared && model === cachedModel) cachedModel = undefined;
       if (![404, 403, 429].includes(res.status)) break; // other models are only tried for these
     }
   } catch {
@@ -224,7 +228,7 @@ async function geminiJson(system: string, user: string): Promise<unknown> {
   return null;
 }
 
-async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boolean): Promise<Partial<Plan> | null> {
+async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boolean, userKey?: string | null): Promise<Partial<Plan> | null> {
   const system = [
     "You turn a movie-picker form into precise TMDB discover filters. Reply with JSON only, in exactly this shape:",
     '{"genres": string[], "genreMatch": "all" | "any", "excludeGenres": string[], "keywords": string[], "minRating": number | null, "sortBy": "popularity.desc" | "vote_average.desc"}',
@@ -238,7 +242,7 @@ async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boo
     "- Form keys: who (solo, partner, friends, kids), mood, genres (kids = family friendly, anime = Japanese animation), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
   ].join("\n");
 
-  const raw = (await geminiJson(system, JSON.stringify(a))) as Record<string, unknown> | null;
+  const raw = (await geminiJson(system, JSON.stringify(a), userKey)) as Record<string, unknown> | null;
   if (!raw || typeof raw !== "object") return null;
 
   const byName = new Map([...genres].map(([id, name]) => [name.toLowerCase(), id] as const));
@@ -540,7 +544,8 @@ function cleanCursor(c: unknown): Cursor | null {
 async function search(
   a: Answers,
   g: Map<number, string>,
-  resume: { cursor: Cursor; seen: number[] } | null
+  resume: { cursor: Cursor; seen: number[] } | null,
+  userKey?: string | null
 ): Promise<{ movies: Movie[]; cursor: Cursor | null }> {
   const seen = new Set<number>(resume?.seen ?? []);
   let plan: Plan;
@@ -563,7 +568,7 @@ async function search(
     }
 
     const explicit = asList(a.genres).length > 0 || a.who === "kids";
-    const ai = await geminiPlan(a, g, explicit);
+    const ai = await geminiPlan(a, g, explicit, userKey);
     if (ai) plan = mergePlan(plan, ai);
     plan = enforce(plan, a);
     if (plan.keywords.length) kw = await keywordIds(plan.keywords);
@@ -616,10 +621,13 @@ export async function POST(request: Request) {
     }
     const g = await genreMap();
     const cursor = body.mode === "more" ? cleanCursor(body.cursor) : null;
+    // A signed-in user with their own Gemini key uses it for the search refinement; everyone else uses the server key.
+    const userKey = await userGeminiKey(request);
     const result = await search(
       body.answers ?? {},
       g,
-      cursor ? { cursor, seen: ints(body.seen, 600) } : null
+      cursor ? { cursor, seen: ints(body.seen, 600) } : null,
+      userKey
     );
     const movies = await withExtras(result.movies);
     return Response.json({ movies, cursor: result.cursor });

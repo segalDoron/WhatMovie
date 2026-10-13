@@ -17,6 +17,8 @@ export class SessionExpiredError extends Error {
 export const lastDbCallAt = (): number => Number(localStorage.getItem(LAST_CALL_KEY)) || 0;
 export const isIdle = (now = Date.now()): boolean => now - lastDbCallAt() > IDLE_LIMIT_MS;
 const markCall = () => localStorage.setItem(LAST_CALL_KEY, String(Date.now()));
+/** Records a successful server call that counts as activity (used by the API helpers). */
+export const markDbCall = markCall;
 
 /** Removes every app-owned key. The theme key and Supabase's own session key do not start with "mt:", so they stay. */
 export function clearCache(): void {
