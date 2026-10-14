@@ -1,0 +1,19 @@
+/* ---------- Bottom sheet: drag the top part between two positions ---------- */
+/* The height is animated, in addition to the slide-in. (section.sheet beats the plain .sheet rule in styles.css.) */
+section.sheet { transition: transform .38s cubic-bezier(.2, .8, .2, 1), visibility 0s .38s, height .3s cubic-bezier(.2, .8, .2, 1); }
+/* Second position: open to the top, leaving a small strip of the page visible. */
+.sheet.expanded { height: calc(100vh - 16px); height: calc(100dvh - 16px); }
+
+.sheet-grip {
+  flex: none; display: grid; place-items: center; height: 24px; padding-top: 8px;
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.sheet-grip span { width: 44px; height: 5px; border-radius: 999px; background: var(--line); transition: background .15s; }
+.sheet-grip:hover span { background: var(--muted); }
+.sheet-grip:focus-visible { outline: none; }
+.sheet-grip:focus-visible span { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+/* The title bar is draggable too. touch-action: none stops the browser from scrolling the page while the finger drags. */
+.sheet .sheet-head { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.sheet .sheet-head .x { cursor: pointer; }
+.sheet .sheet-head { padding-top: 4px; } /* the grip above already adds space */
