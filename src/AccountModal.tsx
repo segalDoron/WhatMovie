@@ -1,69 +1,122 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "./AuthProvider";
 import { Close } from "./Icons";
+import SettingsPane from "./SettingsPane";
+import { useKeySettings } from "./useKeySettings";
 import "./account-modal.css";
+
+type View = "account" | "settings";
 
 interface Props {
   onClose: () => void;
-  onSettings: () => void; // opens the settings (API key) modal on top of this one
-  settingsOpen: boolean; // while it is open, Escape belongs to the settings modal
+  initialView?: View; // "settings" opens straight on the key screen (used right after signing in without a key)
 }
 
-const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+const TITLES: Record<View, string> = { account: "Who am I?", settings: "Settings" };
+const TITLE_FADE_MS = 130;
 
-/** "Who am I?": shows the signed-in account and a log out button. */
-export default function AccountModal({ onClose, onSettings, settingsOpen }: Props) {
+const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+// `inert` removes a hidden screen from the tab order and from screen readers.
+const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
+
+/** "Who am I?": the signed-in account and Log out, with the settings (Gemini key) as a second screen inside the same modal. */
+export default function AccountModal({ onClose, initialView = "account" }: Props) {
   const { user, signOut } = useAuth();
-  const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<View>(initialView);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const ks = useKeySettings(view === "settings");
+
+  // The header text fades out, changes, and fades back in.
+  const [title, setTitle] = useState(TITLES[initialView]);
+  const [titleHidden, setTitleHidden] = useState(false);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setTitleHidden(true);
+    const t = window.setTimeout(() => {
+      setTitle(TITLES[view]);
+      setTitleHidden(false);
+    }, TITLE_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [view]);
 
   useEffect(() => {
-    if (settingsOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, settingsOpen]);
+  }, [onClose]);
 
   const logout = async () => {
-    setBusy(true);
+    setLoggingOut(true);
     await signOut();
     onClose();
   };
+
+  const inSettings = view === "settings";
+  const saveLabel = ks.busy ? "Please wait…" : ks.hasKey ? "Replace key" : "Save key";
 
   return createPortal(
     <div className="am-backdrop">
       <div className="am" role="dialog" aria-modal="true" aria-labelledby="am-title">
         <header className="am-head">
-          <h2 id="am-title">Who am I?</h2>
+          <h2 id="am-title" className={`am-title ${titleHidden ? "hidden" : ""}`}>{title}</h2>
           <button className="x" onClick={onClose} aria-label="Close">
             <Close />
           </button>
         </header>
 
-        <dl className="am-body">
-          <div className="am-row">
-            <dt>Email</dt>
-            <dd>{user?.email ?? "—"}</dd>
+        <div className="am-views" data-view={view}>
+          <div className="am-pane am-pane-account" aria-hidden={inSettings} {...inertProps(inSettings)}>
+            <dl className="am-body">
+              <div className="am-row">
+                <dt>Email</dt>
+                <dd>{user?.email ?? "—"}</dd>
+              </div>
+              <div className="am-row">
+                <dt>Member since</dt>
+                <dd>{formatDate(user?.created_at)}</dd>
+              </div>
+              <div className="am-row">
+                <dt>Last sign-in</dt>
+                <dd>{formatDate(user?.last_sign_in_at)}</dd>
+              </div>
+            </dl>
+            <p className="am-note">You are signed out automatically after 30 minutes without activity.</p>
           </div>
-          <div className="am-row">
-            <dt>Member since</dt>
-            <dd>{formatDate(user?.created_at)}</dd>
-          </div>
-          <div className="am-row">
-            <dt>Last sign-in</dt>
-            <dd>{formatDate(user?.last_sign_in_at)}</dd>
-          </div>
-        </dl>
 
-        <p className="am-note">You are signed out automatically after 30 minutes without activity.</p>
+          <div className="am-pane am-pane-settings" aria-hidden={!inSettings} {...inertProps(!inSettings)}>
+            <SettingsPane ks={ks} />
+          </div>
+        </div>
 
         <div className="am-footer">
-          <button className="secondary" onClick={onSettings} disabled={busy}>
-            Settings
+          <button
+            className="secondary"
+            onClick={() => setView(inSettings ? "account" : "settings")}
+            disabled={loggingOut || ks.busy}
+          >
+            {inSettings ? "Back" : "Settings"}
           </button>
-          <button className="primary" onClick={logout} disabled={busy}>
-            {busy ? "Logging out…" : "Log out"}
-          </button>
+          <div className="am-actions">
+            {inSettings && ks.hasKey && (
+              <button type="button" className="am-link" onClick={ks.remove} disabled={ks.busy}>
+                Remove key
+              </button>
+            )}
+            {inSettings ? (
+              <button className="primary" type="submit" form="key-form" disabled={ks.busy || ks.loading || !ks.value.trim()}>
+                {saveLabel}
+              </button>
+            ) : (
+              <button className="primary" type="button" onClick={logout} disabled={loggingOut}>
+                {loggingOut ? "Logging out…" : "Log out"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>,
