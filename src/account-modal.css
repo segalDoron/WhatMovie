@@ -1,19 +1,66 @@
-/* ---------- Account modal ("Who am I?") ---------- */
+/* ---------- Account modal ("Who am I?") with the settings screen inside ---------- */
 .am-backdrop {
   position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px;
   background: rgba(5, 25, 32, .6); animation: fadein .2s;
 }
 .am {
-  width: min(100%, 470px); max-height: 90dvh; overflow-y: auto; border-radius: 20px;
+  width: min(100%, 470px); height: 384.55px; max-height: 90dvh; overflow: hidden; border-radius: 20px;
+  display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
   animation: am-in .35s cubic-bezier(.2, .8, .2, 1);
 }
 @keyframes am-in { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
-.am-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 6px 22px; }
+.am-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 6px 22px; }
 .am-head h2 { font-size: 1.4rem; font-weight: 800; }
+/* Header text: quick fade out, then fade in with the new text. */
+.am-title { transition: opacity .13s ease; }
+.am-title.hidden { opacity: 0; }
+
+/* Two screens side by side. Going to the settings moves left to right; Back moves right to left. */
+.am-views { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.am-pane {
+  position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1);
+}
+.am-pane-account { transform: translateX(0); }
+.am-pane-settings { transform: translateX(-100%); }
+.am-views[data-view="settings"] .am-pane-account { transform: translateX(100%); }
+.am-views[data-view="settings"] .am-pane-settings { transform: translateX(0); }
+
 .am-body { margin: 0; padding: 12px 22px 0; display: flex; flex-direction: column; gap: 14px; }
 .am-row { display: flex; flex-direction: column; gap: 2px; }
 .am-row dt { color: var(--muted); font-size: .85rem; font-weight: 700; }
 .am-row dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .am-note { margin: 16px 22px 0; color: var(--muted); font-size: .9rem; }
-.am-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 16px 22px 22px; }
+
+/* Footer: the left button stays, the right side holds the primary button (and the Remove key link). */
+.am-footer { flex: none; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 16px 22px 22px; }
+.am-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.am-footer button { white-space: nowrap; }
+.am-link {
+  padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.am-link:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Settings screen */
+.sm-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 22px 0; }
+.sm-sub { margin: 0; font-size: 1.05rem; }
+.sm-text { margin: 0; color: var(--muted); font-size: .92rem; }
+.sm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sm-label { font-weight: 700; }
+.sm-link {
+  padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.sm-pass { position: relative; }
+.sm-pass .text { padding-right: 48px; }
+.sm-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 36px; height: 36px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: grid; place-items: center;
+}
+.sm-eye:hover { color: var(--ink); }
+.sm-eye[aria-pressed="true"] { color: var(--accent); }
+.sm-status { margin: 0; min-height: 1.5em; font-weight: 700; }
+.sm-error { color: var(--accent); }
+.sm-note-ok { color: #1f9d55; }

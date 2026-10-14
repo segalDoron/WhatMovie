@@ -7,7 +7,6 @@ import BottomSheet from "./BottomSheet";
 import SideDrawer from "./SideDrawer";
 import LoginModal from "./LoginModal";
 import AccountModal from "./AccountModal";
-import SettingsModal from "./SettingsModal";
 import { getKeyStatus } from "./settingsApi";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
@@ -64,13 +63,10 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const { user, loading: authLoading, expired, justSignedIn, ackSignIn } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountStart, setAccountStart] = useState<"account" | "settings">("account"); // which screen the account modal opens on
   // Signing out (from the account modal or elsewhere) closes them, so they do not reopen at the next sign-in.
   useEffect(() => {
-    if (!user) {
-      setAccountOpen(false);
-      setSettingsOpen(false);
-    }
+    if (!user) setAccountOpen(false);
   }, [user]);
   // Right after a successful sign-in or sign-up: if no Gemini key is saved yet, open the add-key modal.
   useEffect(() => {
@@ -78,7 +74,10 @@ export default function App() {
     getKeyStatus()
       .then((s) => {
         ackSignIn();
-        if (!s.hasKey) setSettingsOpen(true);
+        if (!s.hasKey) {
+          setAccountStart("settings");
+          setAccountOpen(true);
+        }
       })
       .catch(() => ackSignIn());
   }, [justSignedIn, user, ackSignIn]);
@@ -95,6 +94,7 @@ export default function App() {
   const profileLabel = user?.email ? `Account: ${user.email}` : "Sign in";
   const onAccount = () => {
     if (!user) return setLoginDismissed(false);
+    setAccountStart("account");
     setAccountOpen(true);
   };
 
@@ -316,7 +316,7 @@ export default function App() {
     );
 
   return (
-    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen || settingsOpen)}>
+    <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
       <div className="main">
         <div className="viewport">
           <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
@@ -444,14 +444,7 @@ export default function App() {
       )}
 
       {loginOpen && <LoginModal expired={expired} onDismiss={() => setLoginDismissed(true)} />}
-      {accountOpen && user && (
-        <AccountModal
-          onClose={() => setAccountOpen(false)}
-          onSettings={() => setSettingsOpen(true)}
-          settingsOpen={settingsOpen}
-        />
-      )}
-      {settingsOpen && user && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {accountOpen && user && <AccountModal initialView={accountStart} onClose={() => setAccountOpen(false)} />}
     </div>
   );
 }
