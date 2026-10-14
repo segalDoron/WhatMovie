@@ -48,13 +48,22 @@ export default function SettingsPane({ ks }: { ks: KeySettings }) {
       )}
 
       {/* One status line that always takes up space, so nothing moves when a message appears. */}
-      <p
-        className={ks.error ? "sm-status sm-error" : ks.note ? `sm-status sm-note-${ks.note.tone}` : "sm-status"}
-        role="status"
-        aria-live="polite"
-      >
-        {ks.error || ks.note?.text || ""}
-      </p>
+      <div className="sm-statusbox">
+        <p
+          className={ks.error ? "sm-status sm-error" : ks.note ? `sm-status sm-note-${ks.note.tone}` : "sm-status"}
+          role="status"
+          aria-live="polite"
+        >
+          {ks.error || ks.note?.text || ""}
+        </p>
+        {/* Mobile only (the desktop layout keeps this link in the footer). It shares the line with the messages:
+            a message replaces it, and after a successful removal the key is gone so the link stays hidden. */}
+        {ks.hasKey && !ks.loading && !ks.error && !ks.note && (
+          <button type="button" className="am-link sm-remove-mobile" onClick={ks.remove} disabled={ks.busy}>
+            Remove key
+          </button>
+        )}
+      </div>
     </form>
   );
 }

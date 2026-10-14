@@ -61,6 +61,12 @@
 }
 .sm-eye:hover { color: var(--ink); }
 .sm-eye[aria-pressed="true"] { color: var(--accent); }
+.sm-statusbox { position: relative; min-height: 1.5em; }
 .sm-status { margin: 0; min-height: 1.5em; font-weight: 700; }
+/* The Remove key link under the field: phones only. It sits on the status line, where the messages show. */
+.sm-remove-mobile { position: absolute; left: 0; top: 0; line-height: 1.5; }
+@media (min-width: 768px) { .sm-remove-mobile { display: none; } }
+/* On phones the footer link is hidden (the one under the field is used instead). */
+@media (max-width: 767px) { .am-footer .am-link { display: none; } }
 .sm-error { color: var(--accent); }
 .sm-note-ok { color: #1f9d55; }
