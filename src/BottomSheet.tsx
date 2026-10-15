@@ -60,6 +60,16 @@ export default function BottomSheet({ open, label, children }: Props) {
 
   useEffect(() => () => window.clearTimeout(settle.current), []);
 
+  // Switching to the other list (favorites <-> recent searches) while the sheet is collapsed opens it to the first position,
+  // the same as when it first opens. A sheet that is at the first position or at the top stays where it is.
+  const previous = useRef({ label, open });
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = { label, open };
+    if (open && was.open && was.label !== label && position === 0) snapTo(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [label, open]);
+
   const snapTo = (target: Position) => {
     const el = ref.current;
     if (!el) return;
