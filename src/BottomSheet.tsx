@@ -4,12 +4,20 @@ import "./bottom-sheet.css";
 
 interface Props { open: boolean; label: string; onClose: () => void; children: ReactNode }
 
-const DEFAULT_SHARE = 0.7; // the sheet opens at 70% of the screen height
+// The three positions, as a share of the screen height. Keep in sync with bottom-sheet.css.
+const COLLAPSED_SHARE = 0.12;
+const DEFAULT_SHARE = 0.62; // where the sheet opens
 const EDGE_GAP = 16; // px left above the sheet when it is fully open
 const TAP_SLOP = 6; // px of finger movement that still counts as a tap
-const FLICK = 0.4; // px per ms: a faster swipe decides the direction by itself
+const FLICK = 0.4; // px per ms: a faster swipe moves one position by itself
 
-const bounds = () => ({ min: window.innerHeight * DEFAULT_SHARE, max: window.innerHeight - EDGE_GAP });
+type Position = 0 | 1 | 2; // 0 = collapsed, 1 = the first position, 2 = open to the top
+
+const heights = (): [number, number, number] => [
+  window.innerHeight * COLLAPSED_SHARE,
+  window.innerHeight * DEFAULT_SHARE,
+  window.innerHeight - EDGE_GAP,
+];
 
 interface Drag {
   id: number;
@@ -22,14 +30,17 @@ interface Drag {
   speed: number; // px per ms, positive = moving up
 }
 
+/** A tap on the handle: collapsed -> first position -> top -> back to the first position. */
+const afterTap = (p: Position): Position => (p === 1 ? 2 : 1);
+
 /**
- * Mobile: bottom sheet. It opens at 70% of the screen height. Hold the top part (the handle or the title bar) and drag
- * up to open it to the top, or drag down to bring it back. Tapping the handle toggles the same two positions.
- * The content (favorites, recent searches...) is passed in.
+ * Mobile: bottom sheet with three positions: collapsed (12% of the screen), the first position (62%, where it opens)
+ * and open to the top. Hold the top part (the handle or the title bar) and drag up or down; it follows the finger and
+ * snaps to the nearest position. Tapping the handle toggles. The content (favorites, recent searches...) is passed in.
  */
 export default function BottomSheet({ open, label, onClose, children }: Props) {
   const ref = useRef<HTMLElement>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [position, setPosition] = useState<Position>(1);
   const drag = useRef<Drag | null>(null);
   const settle = useRef(0);
 
@@ -46,19 +57,18 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
     if (!open) return;
     window.clearTimeout(settle.current);
     if (ref.current) ref.current.style.height = "";
-    setExpanded(false);
+    setPosition(1);
   }, [open]);
 
   useEffect(() => () => window.clearTimeout(settle.current), []);
 
-  const snapTo = (target: boolean) => {
+  const snapTo = (target: Position) => {
     const el = ref.current;
     if (!el) return;
-    const { min, max } = bounds();
     el.style.transition = ""; // back to the stylesheet's transition so the move is animated
     void el.offsetHeight;
-    el.style.height = `${target ? max : min}px`;
-    setExpanded(target);
+    el.style.height = `${heights()[target]}px`;
+    setPosition(target);
     window.clearTimeout(settle.current);
     settle.current = window.setTimeout(() => {
       el.style.height = ""; // the class takes over, same height
@@ -85,8 +95,8 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
     if (!d || !el || e.pointerId !== d.id) return;
     const up = d.startY - e.clientY;
     if (Math.abs(up) > TAP_SLOP) d.moved = true;
-    const { min, max } = bounds();
-    el.style.height = `${Math.min(max, Math.max(min, d.startH + up))}px`; // follows the finger, never past the two positions
+    const [min, , max] = heights();
+    el.style.height = `${Math.min(max, Math.max(min, d.startH + up))}px`; // follows the finger, never past the outer positions
     const dt = e.timeStamp - d.lastT;
     if (dt > 0) d.speed = 0.8 * d.speed + 0.2 * ((d.lastY - e.clientY) / dt);
     d.lastY = e.clientY;
@@ -98,23 +108,32 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
     const el = ref.current;
     if (!d || !el || e.pointerId !== d.id) return;
     drag.current = null;
-    const { min, max } = bounds();
+    const snaps = heights();
     const h = el.getBoundingClientRect().height;
-    let target: boolean;
-    if (!d.moved && d.onGrip && e.type === "pointerup") target = !expanded; // a tap on the handle toggles
-    else if (Math.abs(d.speed) > FLICK) target = d.speed > 0; // a quick swipe decides the direction
-    else target = h > (min + max) / 2; // otherwise the nearer position wins
+    let target: Position;
+    if (!d.moved && d.onGrip && e.type === "pointerup") {
+      target = afterTap(position); // a tap on the handle toggles
+    } else if (Math.abs(d.speed) > FLICK) {
+      // A quick swipe moves to the next position in that direction.
+      const above = snaps.findIndex((s) => s > h + 4);
+      const below = snaps.map((s, i) => (s < h - 4 ? i : -1)).filter((i) => i >= 0).pop();
+      target = (d.speed > 0 ? (above === -1 ? 2 : above) : (below === undefined ? 0 : below)) as Position;
+    } else {
+      // Otherwise the nearest position wins.
+      target = snaps.reduce((best, s, i) => (Math.abs(s - h) < Math.abs(snaps[best] - h) ? i : best), 0) as Position;
+    }
     snapTo(target);
   };
 
   const onGripKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" || e.key === " " || e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault();
-      if (e.key === "ArrowUp") setExpanded(true);
-      else if (e.key === "ArrowDown") setExpanded(false);
-      else setExpanded((v) => !v);
-    }
+    if (e.key === "ArrowUp") setPosition((p) => Math.min(2, p + 1) as Position);
+    else if (e.key === "ArrowDown") setPosition((p) => Math.max(0, p - 1) as Position);
+    else if (e.key === "Enter" || e.key === " ") setPosition((p) => afterTap(p));
+    else return;
+    e.preventDefault();
   };
+
+  const state = position === 0 ? "collapsed" : position === 2 ? "expanded" : "";
 
   // Portal + fixed positioning: the sheet floats above the page without touching its layout.
   return createPortal(
@@ -122,7 +141,7 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
       <div className={`backdrop ${open ? "show" : ""}`} onClick={onClose} aria-hidden="true" />
       <section
         ref={ref}
-        className={`sheet ${open ? "open" : ""} ${expanded ? "expanded" : ""}`}
+        className={`sheet ${open ? "open" : ""} ${state}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -136,8 +155,8 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
           className="sheet-grip"
           role="button"
           tabIndex={open ? 0 : -1}
-          aria-label={expanded ? "Bring the list back down" : "Open the list to the top"}
-          aria-expanded={expanded}
+          aria-label={position === 2 ? "Bring the list back down" : position === 0 ? "Open the list" : "Open the list to the top"}
+          aria-expanded={position !== 0}
           onKeyDown={onGripKey}
         >
           <span />

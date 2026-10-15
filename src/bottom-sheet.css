@@ -1,8 +1,13 @@
 /* ---------- Bottom sheet: drag the top part between two positions ---------- */
 /* The height is animated, in addition to the slide-in. (section.sheet beats the plain .sheet rule in styles.css.) */
-section.sheet { transition: transform .38s cubic-bezier(.2, .8, .2, 1), visibility 0s .38s, height .3s cubic-bezier(.2, .8, .2, 1); }
-/* Second position: open to the top, leaving a small strip of the page visible. */
+section.sheet {
+  height: 62vh; height: 62dvh; /* the first position, where the sheet opens */
+  transition: transform .38s cubic-bezier(.2, .8, .2, 1), visibility 0s .38s, height .3s cubic-bezier(.2, .8, .2, 1);
+}
+/* Open to the top, leaving a small strip of the page visible. */
 .sheet.expanded { height: calc(100vh - 16px); height: calc(100dvh - 16px); }
+/* Collapsed: only the top part is left. */
+.sheet.collapsed { height: 12vh; height: 12dvh; }
 
 .sheet-grip {
   flex: none; display: grid; place-items: center; height: 24px; padding-top: 8px;

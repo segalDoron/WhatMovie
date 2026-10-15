@@ -4,7 +4,7 @@
   background: rgba(5, 25, 32, .6); animation: fadein .2s;
 }
 .am {
-  width: min(100%, 470px); height: 384.55px; max-height: 90dvh; overflow: hidden; border-radius: 20px;
+  width: min(100%, 470px); height: 416px; max-height: 90dvh; overflow: hidden; border-radius: 20px;
   display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
   animation: am-in .35s cubic-bezier(.2, .8, .2, 1);
