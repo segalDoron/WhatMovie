@@ -109,7 +109,6 @@ export default function App() {
   const [opening, setOpening] = useState(false); // waiting for a details page's images
   const [panel, setPanel] = useState<Panel | null>(null); // which list is open (plain UI state, stays open until closed)
   const isDesktop = useMediaQuery("(min-width: 768px)");
-  const sheetShown = panel !== null && !isDesktop; // mobile: bottom sheet
   const drawerShown = panel !== null && isDesktop; // desktop: side drawer
   const lastPanel = useRef<Panel>("favorites"); // keeps the content visible while the panel slides out
   if (panel) lastPanel.current = panel;
@@ -355,7 +354,7 @@ export default function App() {
           )}
 
           {view === "form" && (
-            <div className="layer" {...inertProps(sheetShown || detailOpen)}>
+            <div className="layer" {...inertProps(detailOpen)}>
               <QuestionForm onSubmit={submit} />
             </div>
           )}
@@ -369,10 +368,10 @@ export default function App() {
 
           {view === "results" && (
             <div className="stage">
-              <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen} {...inertProps(sheetShown || detailOpen)}>
+              <section className={`page list-page ${detailOpen ? "away" : ""}`} aria-hidden={detailOpen} {...inertProps(detailOpen)}>
                 <ResultsList
                   movies={shownMovies}
-                  tabbable={!detailOpen && !sheetShown}
+                  tabbable={!detailOpen}
                   onStartOver={startOver}
                   onOpen={(m) => openDetail(m, "results")}
                   hasMore={cursor !== null}
@@ -386,7 +385,7 @@ export default function App() {
             </div>
           )}
 
-          <section ref={detailRef} className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen} {...inertProps(sheetShown)}>
+          <section ref={detailRef} className={`page detail-page ${detailOpen ? "in" : ""}`} aria-hidden={!detailOpen}>
             <MovieDetail movie={selected} open={detailOpen} tabbable={detailOpen} onBack={goBack} onStartOver={startOver} />
           </section>
 
@@ -440,7 +439,7 @@ export default function App() {
       {isDesktop ? (
         <SideDrawer open={panel !== null} label={panelLabel}>{panelBody}</SideDrawer>
       ) : (
-        <BottomSheet open={panel !== null} label={panelLabel} onClose={closePanel}>{panelBody}</BottomSheet>
+        <BottomSheet open={panel !== null} label={panelLabel}>{panelBody}</BottomSheet>
       )}
 
       {loginOpen && <LoginModal expired={expired} onDismiss={() => setLoginDismissed(true)} />}
