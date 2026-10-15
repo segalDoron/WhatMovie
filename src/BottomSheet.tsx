@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { createPortal } from "react-dom";
 import "./bottom-sheet.css";
 
-interface Props { open: boolean; label: string; onClose: () => void; children: ReactNode }
+interface Props { open: boolean; label: string; children: ReactNode }
 
 // The three positions, as a share of the screen height. Keep in sync with bottom-sheet.css.
 const COLLAPSED_SHARE = 0.12;
@@ -37,20 +37,18 @@ const afterTap = (p: Position): Position => (p === 1 ? 2 : 1);
  * Mobile: bottom sheet with three positions: collapsed (12% of the screen), the first position (62%, where it opens)
  * and open to the top. Hold the top part (the handle or the title bar) and drag up or down; it follows the finger and
  * snaps to the nearest position. Tapping the handle toggles. The content (favorites, recent searches...) is passed in.
+ * There is no dimmed backdrop: the page behind stays visible and scrollable. The sheet does not close on an outside tap;
+ * it closes with its own close button or the menu button (both handled by the parent).
  */
-export default function BottomSheet({ open, label, onClose, children }: Props) {
+export default function BottomSheet({ open, label, children }: Props) {
   const ref = useRef<HTMLElement>(null);
   const [position, setPosition] = useState<Position>(1);
   const drag = useRef<Drag | null>(null);
   const settle = useRef(0);
 
   useEffect(() => {
-    if (!open) return;
-    ref.current?.querySelector<HTMLButtonElement>(".x")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    if (open) ref.current?.querySelector<HTMLButtonElement>(".x")?.focus();
+  }, [open]);
 
   // Every time the sheet opens, it starts at the first position.
   useEffect(() => {
@@ -138,12 +136,11 @@ export default function BottomSheet({ open, label, onClose, children }: Props) {
   // Portal + fixed positioning: the sheet floats above the page without touching its layout.
   return createPortal(
     <>
-      <div className={`backdrop ${open ? "show" : ""}`} onClick={onClose} aria-hidden="true" />
       <section
         ref={ref}
         className={`sheet ${open ? "open" : ""} ${state}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-label={label}
         aria-hidden={!open}
         onPointerDown={onPointerDown}
