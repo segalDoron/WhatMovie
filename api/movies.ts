@@ -1,12 +1,13 @@
 // Vercel serverless function. API keys stay on the server (env vars).
 import { userGeminiKey } from "./_shared.js";
+import { rankConfig, scorePool, selectPage, type Features, type Signal } from "./_rank.js";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
 interface TmdbMovie {
   id: number; title: string; release_date?: string; vote_average: number;
   poster_path: string | null; backdrop_path: string | null; overview: string; genre_ids?: number[];
-  original_language?: string;
+  original_language?: string; vote_count?: number; popularity?: number;
 }
 interface Movie {
   id: number; title: string; genres: string[]; year: string; score: number;
@@ -60,17 +61,77 @@ function pickExtras(d: ExtrasPayload): { rating: string; providers: string[]; ru
   return { rating: cert(region) || cert("US"), providers: unique(names).slice(0, 6), ...(d.runtime ? { runtime: d.runtime } : {}) };
 }
 
-async function withExtras(movies: Movie[]): Promise<Movie[]> {
+/* ---------- Details and ranking features (one TMDB call per movie, cached while the server instance stays warm) ---------- */
+interface DetailPayload extends ExtrasPayload {
+  genres?: { id: number; name: string }[];
+  belongs_to_collection?: { id: number } | null;
+  credits?: { cast?: { id: number }[]; crew?: { id: number; job: string }[] };
+  keywords?: { keywords?: { id: number }[] };
+  vote_average?: number; vote_count?: number; popularity?: number; original_language?: string; release_date?: string;
+}
+const DETAILS = { append_to_response: "release_dates,watch/providers,credits,keywords" };
+interface Detail { f: Features; extras: { rating: string; providers: string[]; runtime?: number } }
+const detailCache = new Map<number, Detail>();
+
+async function loadDetail(id: number): Promise<Detail | null> {
+  const hit = detailCache.get(id);
+  if (hit) return hit;
+  try {
+    const d = await tmdb<DetailPayload>(`/movie/${id}`, DETAILS);
+    const f: Features = {
+      id,
+      g: (d.genres ?? []).map((x) => x.id).slice(0, 8),
+      k: (d.keywords?.keywords ?? []).map((x) => x.id).slice(0, 15),
+      c: (d.credits?.cast ?? []).map((x) => x.id).slice(0, 5),
+      d: (d.credits?.crew ?? []).filter((x) => x.job === "Director").map((x) => x.id).slice(0, 3),
+      y: Number(d.release_date?.slice(0, 4)) || 0,
+      l: d.original_language ?? "",
+      col: d.belongs_to_collection?.id ?? 0,
+      va: d.vote_average ?? 0,
+      vc: d.vote_count ?? 0,
+      pop: d.popularity ?? 0,
+    };
+    const out = { f, extras: pickExtras(d) };
+    if (detailCache.size > 3000) detailCache.clear();
+    detailCache.set(id, out);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Runs `fn` over the list with at most `limit` calls in flight (TMDB rate limits). */
+async function mapLimit<T, R>(list: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(list.length);
+  let next = 0;
   await Promise.all(
-    movies.map(async (m) => {
-      try {
-        Object.assign(m, pickExtras(await tmdb<ExtrasPayload>(`/movie/${m.id}`, EXTRAS)));
-      } catch {
-        /* leave the rating and providers empty */
+    Array.from({ length: Math.min(limit, list.length) }, async () => {
+      while (next < list.length) {
+        const i = next++;
+        out[i] = await fn(list[i]);
       }
     })
   );
-  return movies;
+  return out;
+}
+
+/** A movie ready to show, with the features used to rank it. */
+interface Item { movie: Movie; f: Features; b?: number } // b: 0..1 share of the seed picks that recommend this movie
+
+/** What the discover result already tells us, for when the details call fails. */
+const basicFeatures = (m: TmdbMovie): Features => ({
+  id: m.id, g: (m.genre_ids ?? []).slice(0, 8), k: [], c: [], d: [], y: Number(m.release_date?.slice(0, 4)) || 0,
+  l: m.original_language ?? "", col: 0, va: m.vote_average ?? 0, vc: m.vote_count ?? 0, pop: m.popularity ?? 0,
+});
+
+async function hydrate(list: TmdbMovie[], g: Map<number, string>): Promise<Item[]> {
+  const details = await mapLimit(list, 12, (m) => loadDetail(m.id));
+  return list.map((m, i) => {
+    const movie = toMovie(m, g);
+    const d = details[i];
+    if (d) Object.assign(movie, d.extras); // on failure the rating and providers stay empty
+    return { movie, f: d?.f ?? basicFeatures(m) };
+  });
 }
 
 /* ---------- Search: answers -> plan (rules, refined by Gemini) -> page loop with strict filtering ---------- */
@@ -411,7 +472,9 @@ function globalExclude(a: Answers): number[] {
 }
 
 interface Pass { params: Params; plan: Plan }
-interface Cursor { pass: number; page: number; plan: Plan; kw: number[] }
+// The cursor travels through the browser (opaque to it). It carries the ranked movies that were not shown yet (buf),
+// the seed movie ids (sd), and whether TMDB has nothing more to give for these filters (done).
+interface Cursor { pass: number; page: number; plan: Plan; kw: number[]; sd: number[]; buf: Item[]; done: boolean }
 
 function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[] {
   const near = asList(a.genres).includes("anime") ? [ANIMATION] : unique([...plan.mustHave, ...plan.anyOf]); // anime stays animation
@@ -441,7 +504,7 @@ async function collect(
   let scanned = 0;
 
   while (found.length < opts.target && pass < passes.length) {
-    if (pass === GENERIC_PASS && !opts.allowGeneric) return { found, next: { pass, page: 1 } };
+    if (pass === GENERIC_PASS && !opts.allowGeneric) return { found, next: null }; // the loose "nearby genres" pass is off: filters stay mandatory
     if (scanned >= opts.maxScan) return { found, next: { pass, page } };
 
     const r = await tmdb<DiscoverPage>("/discover/movie", { ...passes[pass].params, page });
@@ -482,7 +545,7 @@ const parseSeed = (q: string) => {
   return m ? { title: m[1], year: m[2] } : { title: q };
 };
 
-async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbMovie[]> {
+async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<{ seeds: TmdbMovie[]; candidates: TmdbMovie[]; agree: Map<number, number> }> {
   const found = await Promise.all(
     seeds.slice(0, 12).map(async (q) => {
       const { title, year } = parseSeed(q);
@@ -491,7 +554,7 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
     })
   );
   const seedMovies = found.filter(Boolean);
-  if (!seedMovies.length) return [];
+  if (!seedMovies.length) return { seeds: [], candidates: [], agree: new Map() };
   const seedIds = new Set(seedMovies.map((m) => m.id));
 
   const lists = await Promise.all(
@@ -507,6 +570,8 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
       if (e) e.n++;
       else tally.set(m.id, { m, n: 1 });
     }
+  // How many of the picks recommend each movie, as a share (1 = all of them).
+  const agree = new Map([...tally].map(([id, e]) => [id, e.n / seedMovies.length] as [number, number]));
   const byFilter = movieFilter(a);
   const unfiltered = [...tally.values()].sort((x, y) => y.n - x.n || y.m.vote_average - x.m.vote_average).map((e) => e.m);
   const starred = byFilter ? unfiltered.filter(byFilter) : unfiltered;
@@ -519,16 +584,38 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<TmdbM
     return !((from && y && y < from) || (to && y && y > to));
   };
   const strict = ranked.filter((m) => inYears(m) && isValid(m, plan));
-  if (strict.length >= 8) return strict.slice(0, TARGET);
+  if (strict.length >= 8) return { seeds: seedMovies, candidates: strict.slice(0, 30), agree };
   // Too few: keep only the always-on rules (no cartoons, documentaries or skipped genres).
   const always = { ...plan, mustHave: [], anyOf: [], exclude: globalExclude(a) };
-  return ranked.filter((m) => inYears(m) && isValid(m, always)).slice(0, TARGET);
+  return { seeds: seedMovies, candidates: ranked.filter((m) => inYears(m) && isValid(m, always)).slice(0, 30), agree };
 }
 
 /* Cursors come back from the browser, so check them before use. */
 const ints = (v: unknown, max = 10): number[] => (Array.isArray(v) ? v.map(Number).filter(Number.isInteger).slice(0, max) : []);
+const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
+const text = (v: unknown, max = 3000): string => (typeof v === "string" ? v.slice(0, max) : "");
+const strings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v.map((x) => text(x, 80)).filter(Boolean).slice(0, max) : []);
+
+function cleanItem(o: unknown): Item | null {
+  const it = o as { movie?: Record<string, unknown>; f?: Record<string, unknown>; b?: unknown } | null;
+  const m = it?.movie, f = it?.f;
+  if (!m || !f || !Number.isInteger(m.id) || m.id !== f.id) return null;
+  const movie: Movie = {
+    id: m.id as number, title: text(m.title, 200), genres: strings(m.genres, 8), year: text(m.year, 4), score: num(m.score),
+    poster: typeof m.poster === "string" ? m.poster.slice(0, 300) : null, backdrop: typeof m.backdrop === "string" ? m.backdrop.slice(0, 300) : null,
+    overview: text(m.overview), rating: text(m.rating, 10), providers: strings(m.providers, 6), ...(num(m.runtime) ? { runtime: num(m.runtime) } : {}),
+  };
+  const feat: Features = {
+    id: f.id as number, g: ints(f.g, 8), k: ints(f.k, 15), c: ints(f.c, 5), d: ints(f.d, 3), y: num(f.y), l: text(f.l, 5),
+    col: Number.isInteger(f.col) ? (f.col as number) : 0, va: num(f.va), vc: num(f.vc), pop: num(f.pop),
+  };
+  const b = clamp(num(it?.b), 0, 1);
+  return { movie, f: feat, ...(b ? { b } : {}) };
+}
+
 function cleanCursor(c: unknown): Cursor | null {
-  const o = c as Partial<Cursor> | null;
+  const o = c as (Partial<Cursor> & { buf?: unknown }) | null;
   if (!o || typeof o !== "object") return null;
   const p = (o.plan ?? {}) as Partial<Plan>;
   const pass = Math.min(Math.max(Number(o.pass) | 0, 0), GENERIC_PASS);
@@ -538,42 +625,76 @@ function cleanCursor(c: unknown): Cursor | null {
     minRating: Number.isFinite(Number(p.minRating)) && Number(p.minRating) > 0 ? Math.min(Number(p.minRating), 8.5) : undefined,
     sortBy: p.sortBy === "vote_average.desc" || p.sortBy === "popularity.desc" ? p.sortBy : undefined,
   };
-  return { pass, page, plan, kw: ints(o.kw, 3) };
+  const buf = (Array.isArray(o.buf) ? o.buf : []).slice(0, 80).map(cleanItem).filter((x): x is Item => x !== null);
+  return { pass, page, plan, kw: ints(o.kw, 3), sd: ints(o.sd, 12), buf, done: o.done === true };
+}
+
+/* ---------- The user's taste: ids only. Favorites, likes and dislikes become ranking signals; all of them, plus watched, are excluded. ---------- */
+interface Taste { favorites: number[]; likes: number[]; dislikes: number[]; watched: number[] }
+function cleanTaste(t: unknown): Taste {
+  const o = (t ?? {}) as Record<string, unknown>;
+  return { favorites: ints(o.favorites, 200), likes: ints(o.likes, 200), dislikes: ints(o.dislikes, 200), watched: ints(o.watched, 600) };
+}
+
+/** The ranking signals: the newest favorites, likes and dislikes, plus the "loved" / this-or-that picks. Their details are cached. */
+async function buildSignals(taste: Taste, seedIds: number[]): Promise<Signal[]> {
+  const wanted: { kind: Signal["kind"]; id: number }[] = [
+    ...taste.favorites.slice(0, 15).map((id) => ({ kind: "favorite" as const, id })),
+    ...taste.likes.slice(0, 15).map((id) => ({ kind: "like" as const, id })),
+    ...taste.dislikes.slice(0, 10).map((id) => ({ kind: "dislike" as const, id })),
+    ...seedIds.slice(0, 12).map((id) => ({ kind: "seed" as const, id })),
+  ];
+  const details = await mapLimit(wanted, 12, (w) => loadDetail(w.id));
+  return wanted.flatMap((w, i) => (details[i] ? [{ kind: w.kind, f: details[i]!.f }] : []));
 }
 
 async function search(
   a: Answers,
   g: Map<number, string>,
   resume: { cursor: Cursor; seen: number[] } | null,
-  userKey?: string | null
+  userKey: string | null | undefined,
+  taste: Taste
 ): Promise<{ movies: Movie[]; cursor: Cursor | null }> {
-  const seen = new Set<number>(resume?.seen ?? []);
+  const cfg = rankConfig();
+  // Never offered again: what was shown, and what the user disliked, liked, favorited or watched.
+  const seen = new Set<number>([...(resume?.seen ?? []), ...taste.dislikes, ...taste.likes, ...taste.favorites, ...taste.watched]);
   let plan: Plan;
   let kw: number[];
-  let start: { pass: number; page: number };
+  let next: { pass: number; page: number } | null;
+  let seedIds: number[] = [];
+  let seedCandidates: TmdbMovie[] = [];
+  let agree = new Map<number, number>();
+  let pool: Item[] = [];
 
   if (resume) {
     ({ plan, kw } = resume.cursor);
-    start = { pass: resume.cursor.pass, page: resume.cursor.page };
+    next = resume.cursor.done ? null : { pass: resume.cursor.pass, page: resume.cursor.page };
+    seedIds = resume.cursor.sd;
+    pool = resume.cursor.buf.filter((it) => !seen.has(it.movie.id)); // anything excluded since it was buffered drops out
+    for (const it of pool) seen.add(it.movie.id);
   } else {
     plan = rulePlan(a);
     kw = [];
 
-    // Movie picks take priority; year, genre rules and the no-cartoons rule still apply.
+    // "A movie you loved" and the this-or-that movie picks are extra positive signals, and their TMDB recommendations join the candidates.
     const seeds = [String(a.loved ?? "").trim(), ...asList(a.seeds)].filter(Boolean);
     if (seeds.length) {
       plan = enforce(plan, a);
       const r = await fromSeeds(seeds, a, plan);
-      if (r.length) return { movies: r.map((m) => toMovie(m, g)), cursor: { pass: 0, page: 1, plan, kw } };
+      seedIds = r.seeds.map((m) => m.id);
+      seedCandidates = r.candidates;
+      agree = r.agree;
+      for (const id of seedIds) seen.add(id);
     }
-
-    const explicit = asList(a.genres).length > 0 || a.who === "kids";
-    const ai = await geminiPlan(a, g, explicit, userKey);
-    if (ai) plan = mergePlan(plan, ai);
-    plan = enforce(plan, a);
-    if (plan.keywords.length) kw = await keywordIds(plan.keywords);
+    if (!seedIds.length) {
+      const explicit = asList(a.genres).length > 0 || a.who === "kids";
+      const ai = await geminiPlan(a, g, explicit, userKey);
+      if (ai) plan = mergePlan(plan, ai);
+      plan = enforce(plan, a);
+      if (plan.keywords.length) kw = await keywordIds(plan.keywords);
+    }
     const startPage = a.novelty === "familiar" ? 1 : 1 + Math.floor(Math.random() * 3); // variety between searches
-    start = { pass: 0, page: startPage };
+    next = { pass: 0, page: startPage };
   }
 
   const params = baseParams(a, plan);
@@ -582,15 +703,39 @@ async function search(
     const s = await tmdb<{ results: { id: number }[] }>("/search/person", { query: actor });
     if (s.results[0]) params.with_cast = s.results[0].id;
   }
+  const passes = buildPasses(a, plan, params, kw);
+  const accept = movieFilter(a);
+  const gap = ratingGap(a);
+  const verify = gap ? (list: TmdbMovie[]) => keepRated(list, gap) : undefined;
 
-  const { found, next } = await collect(buildPasses(a, plan, params, kw), start, seen, {
-    target: TARGET,
-    maxScan: resume ? 10 : MAX_PAGES,
-    allowGeneric: !!resume, // the generic fallback only runs for "show more"
-    accept: movieFilter(a),
-    verify: (() => { const gap = ratingGap(a); return gap ? (list: TmdbMovie[]) => keepRated(list, gap) : undefined; })(),
-  });
-  return { movies: found.map((m) => toMovie(m, g)), cursor: next ? { ...next, plan, kw } : null };
+  // Fill the pool in batches of 50 until there are enough candidates to rank and diversify.
+  // With fewer than a page available, the exploration budget lets it fetch up to maxBatches batches.
+  let batches = 0;
+  const signalsPromise = buildSignals(taste, seedIds); // runs while TMDB is being searched
+  const seedFresh = seedCandidates.filter((m) => !seen.has(m.id)); // recommended for the picks: always part of the first batch
+  for (const m of seedFresh) seen.add(m.id);
+  while (pool.length < cfg.refillBelow && next && batches < (pool.length >= cfg.page ? 1 : cfg.maxBatches)) {
+    const r = await collect(passes, next, seen, { target: cfg.batch, maxScan: resume ? 10 : MAX_PAGES, allowGeneric: false, accept, verify });
+    next = r.next;
+    const fresh = batches === 0 ? [...seedFresh, ...r.found] : r.found;
+    batches++;
+    const unique = [...new Map(fresh.map((m) => [m.id, m])).values()];
+    for (const m of unique) seen.add(m.id);
+    const items = await hydrate(unique, g);
+    for (const it of items) if (agree.has(it.movie.id)) it.b = agree.get(it.movie.id);
+    pool.push(...items);
+  }
+
+  const signals = await signalsPromise;
+  const ranked = scorePool(pool, signals, cfg);
+  for (const r of ranked) r.base += cfg.seedBoost * (r.item.b ?? 0); // movies TMDB recommends for the "loved" picks rank higher
+  const { page, rest } = selectPage(ranked, cfg);
+  const buf = rest.slice(0, cfg.buffer).map((r) => r.item);
+  const done = next === null;
+  return {
+    movies: page.map((r) => r.item.movie),
+    cursor: done && !buf.length ? null : { pass: next?.pass ?? 0, page: next?.page ?? 1, plan, kw, sd: seedIds, buf, done },
+  };
 }
 
 export async function POST(request: Request) {
@@ -622,15 +767,16 @@ export async function POST(request: Request) {
     const g = await genreMap();
     const cursor = body.mode === "more" ? cleanCursor(body.cursor) : null;
     // A signed-in user with their own Gemini key uses it for the search refinement; everyone else uses the server key.
+    // A signed-in user with their own Gemini key uses it for the search fine-tuning; everyone else uses the server key.
     const userKey = await userGeminiKey(request);
     const result = await search(
       body.answers ?? {},
       g,
-      cursor ? { cursor, seen: ints(body.seen, 600) } : null,
-      userKey
+      cursor ? { cursor, seen: ints(body.seen, 1000) } : null,
+      userKey,
+      cleanTaste(body.taste)
     );
-    const movies = await withExtras(result.movies);
-    return Response.json({ movies, cursor: result.cursor });
+    return Response.json({ movies: result.movies, cursor: result.cursor });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });
   }

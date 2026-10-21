@@ -14,8 +14,10 @@ import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
 import { useAuth } from "./AuthProvider";
 import { useUserData, type Favorite, type SavedSearch } from "./userData";
 import { useMediaQuery } from "./useMediaQuery";
+import { useInsight } from "./useInsight";
+import { keyStatus } from "./keyStatus";
 import { preloadImages } from "./preload";
-import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
+import { fetchMovies, fetchMore, fetchMovie, type Cursor, type Taste } from "./api";
 import type { Answers, Movie, View } from "./types";
 import "./styles-additions.css";
 
@@ -68,20 +70,42 @@ export default function App() {
   useEffect(() => {
     if (!user) setAccountOpen(false);
   }, [user]);
-  // Right after a successful sign-in or sign-up: if no Gemini key is saved yet, open the add-key modal.
+  // Whenever someone is signed in (after a sign-in or a page load) check whether they saved their own Gemini key.
+  // The analysis only runs when they did. Right after a sign-in or sign-up without a key, open the add-key screen.
+  const justSignedInRef = useRef(justSignedIn);
+  justSignedInRef.current = justSignedIn;
+  const userId = user?.id ?? null;
   useEffect(() => {
-    if (!justSignedIn || !user) return;
+    if (!userId) {
+      keyStatus.set(null);
+      return;
+    }
+    let live = true;
     getKeyStatus()
       .then((s) => {
-        ackSignIn();
-        if (!s.hasKey) {
+        if (!live) return;
+        keyStatus.set(s.hasKey);
+        if (justSignedInRef.current && !s.hasKey) {
           setAccountStart("settings");
           setAccountOpen(true);
         }
+        ackSignIn();
       })
-      .catch(() => ackSignIn());
-  }, [justSignedIn, user, ackSignIn]);
-  const { favorites, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+      .catch(() => live && ackSignIn());
+    return () => {
+      live = false;
+    };
+  }, [userId, ackSignIn]);
+  const { favorites, votes, watched, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+  // The latest taste, read at the moment a search or "show more" is sent (newest first).
+  const tasteRef = useRef<Taste>({ favorites: [], likes: [], dislikes: [], watched: [] });
+  tasteRef.current = {
+    favorites: favorites.map((m) => m.id),
+    likes: votes.like.map((m) => m.id),
+    dislikes: votes.dislike.map((m) => m.id),
+    watched: watched.map((m) => m.id),
+  };
+  const { insight, start: startInsight, clear: clearInsight } = useInsight();
 
   const [loginDismissed, setLoginDismissed] = useState(false);
   const loginOpen = !authLoading && !user && !loginDismissed;
@@ -161,6 +185,7 @@ export default function App() {
       else if (s?.view === "error") setView("error");
       else {
         moreToken.current++;
+        clearInsight();
         setLoadingMore(false);
         setView("form");
         const pending = pendingSearch.current;
@@ -188,10 +213,11 @@ export default function App() {
   const submit: React.ComponentProps<typeof QuestionForm>["onSubmit"] = async (answers) => {
     const id = ++requestId.current;
     addSearch(answers); // keeps the last 5 searches
+    clearInsight();
     pushNav({ view: "loading" });
     setView("loading");
     try {
-      const result = await fetchMovies(answers);
+      const result = await fetchMovies(answers, tasteRef.current);
       if (id !== requestId.current) return; // user went back while loading
       answersRef.current = answers;
       moreToken.current++;
@@ -202,6 +228,7 @@ export default function App() {
       setMoreMessage("");
       replaceNav({ view: "results" });
       setView("results");
+      startInsight(answers, result.movies); // does nothing unless the user has their own Gemini key
     } catch (e) {
       if (id !== requestId.current) return;
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -227,7 +254,7 @@ export default function App() {
     setLoadingMore(true);
     setMoreMessage("");
     try {
-      const r = await fetchMore(answersRef.current, cursor, movies.map((m) => m.id));
+      const r = await fetchMore(answersRef.current, cursor, movies.map((m) => m.id), tasteRef.current);
       if (token !== moreToken.current) return;
       const have = new Set(movies.map((m) => m.id));
       const fresh = r.movies.filter((m) => !have.has(m.id));
@@ -380,6 +407,7 @@ export default function App() {
                   onMore={loadMore}
                   sorted={sortByRating}
                   onToggleSort={() => setSortByRating((v) => !v)}
+                  insight={insight}
                 />
               </section>
             </div>

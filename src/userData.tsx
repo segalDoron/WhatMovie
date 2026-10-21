@@ -9,12 +9,14 @@ export type Vote = "like" | "dislike";
 export interface VoteStore { like: Favorite[]; dislike: Favorite[] }
 export interface SavedSearch { id: string; savedAt: number; answers: Answers }
 
-interface Data { favorites: Favorite[]; votes: VoteStore; searches: SavedSearch[] }
+interface Data { favorites: Favorite[]; votes: VoteStore; searches: SavedSearch[]; watched: Favorite[] }
 interface Legacy { favorites: Favorite[]; like: Favorite[]; dislike: Favorite[]; searches: SavedSearch[] }
 interface MovieDbRow { movie_id: number; title: string; genres: string[]; year: string | null; score: number | string | null; poster: string | null; rating: string | null }
 
 interface UserDataValue extends Data {
   isFavorite: (id: number) => boolean;
+  isWatched: (id: number) => boolean;
+  toggleWatched: (m: Favorite) => void;
   toggleFavorite: (m: Favorite) => void;
   removeFavorite: (id: number) => void;
   vote: (kind: Vote, m: Favorite) => void;
@@ -24,10 +26,10 @@ interface UserDataValue extends Data {
   dismissSyncError: () => void;
 }
 
-const EMPTY: Data = { favorites: [], votes: { like: [], dislike: [] }, searches: [] };
+const EMPTY: Data = { favorites: [], votes: { like: [], dislike: [] }, searches: [], watched: [] };
 const MAX_SEARCHES = 5;
 const LOCAL_PREFIX = "local-"; // searches not yet saved to the database
-const CACHE = { favorites: "mt:favorites", votes: "mt:votes", searches: "mt:searches" };
+const CACHE = { favorites: "mt:favorites", votes: "mt:votes", searches: "mt:searches", watched: "mt:watched" };
 const LEGACY_KEYS = ["usersInfo", "movie-tonight:favorites", "movie-tonight:searches", "vote"];
 const SYNC_ERROR = "Couldn't save to your account. Changes stay on this page until you refresh.";
 
@@ -70,6 +72,7 @@ function writeCache(d: Data) {
     localStorage.setItem(CACHE.favorites, JSON.stringify(d.favorites));
     localStorage.setItem(CACHE.votes, JSON.stringify(d.votes));
     localStorage.setItem(CACHE.searches, JSON.stringify(d.searches));
+    localStorage.setItem(CACHE.watched, JSON.stringify(d.watched));
   } catch {
     /* storage full or blocked: the page still works for this visit */
   }
@@ -110,6 +113,7 @@ function mergePlan(page: Data, legacy: Legacy | null): Data {
       dislike: uniqueBy([...page.votes.dislike, ...l.dislike], (m) => m.id).filter((m) => !likeIds.has(m.id)),
     },
     searches: dedupeSearches([...page.searches, ...l.searches]),
+    watched: uniqueBy(page.watched, (m) => m.id),
   };
 }
 
@@ -118,6 +122,14 @@ async function uploadAll(uid: string, plan: Data): Promise<void> {
     await dbCall(() =>
       supabase.from("favorites").upsert(plan.favorites.map((f) => ({ user_id: uid, ...movieRow(f) })), { onConflict: "user_id,movie_id" })
     );
+  }
+  if (plan.watched.length) {
+    // Not fatal: until the watched table exists in the database, everything else still syncs.
+    await dbCall(() =>
+      supabase.from("watched").upsert(plan.watched.map((m) => ({ user_id: uid, ...movieRow(m) })), { onConflict: "user_id,movie_id" })
+    ).catch((e) => {
+      if (e instanceof SessionExpiredError) throw e;
+    });
   }
   const votes = [
     ...plan.votes.like.map((m) => ({ user_id: uid, kind: "like", ...movieRow(m) })),
@@ -138,6 +150,12 @@ async function loadAll(): Promise<Data> {
   const favs = await dbCall<MovieDbRow[]>(() =>
     supabase.from("favorites").select("movie_id,title,genres,year,score,poster,rating").order("created_at", { ascending: false })
   );
+  const watched = await dbCall<MovieDbRow[]>(() =>
+    supabase.from("watched").select("movie_id,title,genres,year,score,poster,rating").order("created_at", { ascending: false })
+  ).catch((e) => {
+    if (e instanceof SessionExpiredError) throw e;
+    return [] as MovieDbRow[]; // the watched table is missing or unreadable: carry on without it
+  });
   const votes = await dbCall<(MovieDbRow & { kind: Vote })[]>(() =>
     supabase.from("votes").select("kind,movie_id,title,genres,year,score,poster,rating").order("created_at", { ascending: false })
   );
@@ -151,6 +169,7 @@ async function loadAll(): Promise<Data> {
       dislike: votes.filter((v) => v.kind === "dislike").map(fromRow),
     },
     searches: dedupeSearches(searches.map((s) => ({ id: s.id, savedAt: Date.parse(s.created_at), answers: s.answers }))),
+    watched: watched.map(fromRow),
   };
 }
 
@@ -213,6 +232,19 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   const isFavorite = (id: number) => data.favorites.some((f) => f.id === id);
+
+  const isWatched = (id: number) => data.watched.some((m) => m.id === id);
+
+  // "Watched" movies are not recommended again.
+  const toggleWatched = (m: Favorite) => {
+    const cur = dataRef.current;
+    const has = cur.watched.some((x) => x.id === m.id);
+    commit({ ...cur, watched: has ? cur.watched.filter((x) => x.id !== m.id) : [pick(m), ...cur.watched] });
+    const uid = userIdRef.current;
+    if (!uid) return;
+    if (has) remote(() => supabase.from("watched").delete().eq("movie_id", m.id));
+    else remote(() => supabase.from("watched").upsert({ user_id: uid, ...movieRow(m) }, { onConflict: "user_id,movie_id" }));
+  };
 
   const toggleFavorite = (m: Favorite) => {
     const cur = dataRef.current;
@@ -279,6 +311,8 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const value: UserDataValue = {
     ...data,
     isFavorite,
+    isWatched,
+    toggleWatched,
     toggleFavorite,
     removeFavorite,
     vote,
