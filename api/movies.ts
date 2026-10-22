@@ -727,9 +727,10 @@ async function search(
   }
 
   const signals = await signalsPromise;
-  const ranked = scorePool(pool, signals, cfg);
+  const ask = { must: plan.mustHave, any: plan.anyOf }; // the genres the user asked for
+  const ranked = scorePool(pool, signals, cfg, ask);
   for (const r of ranked) r.base += cfg.seedBoost * (r.item.b ?? 0); // movies TMDB recommends for the "loved" picks rank higher
-  const { page, rest } = selectPage(ranked, cfg);
+  const { page, rest } = selectPage(ranked, cfg, ask);
   const buf = rest.slice(0, cfg.buffer).map((r) => r.item);
   const done = next === null;
   return {
