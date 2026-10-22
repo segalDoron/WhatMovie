@@ -62,12 +62,12 @@ export async function POST(request: Request) {
     }
 
     const deadline = Date.now() + TOTAL_MS;
-    const queue = [...new Set([workingModel, process.env.GEMINI_ANALYSIS_MODEL, "gemini-2.5-flash"].filter(Boolean) as string[])];
+    const queue = [...new Set([workingModel, process.env.GEMINI_ANALYSIS_MODEL, "gemini-2.5-flash", "gemini-2.5-flash-lite"].filter(Boolean) as string[])];
     const tried: string[] = [];
     let listed = false;
     let lastStatus = 0;
 
-    while (tried.length < 3 && Date.now() < deadline) {
+    while (tried.length < 4 && Date.now() < deadline) {
       if (!queue.length) {
         if (listed) break;
         listed = true; // the usual models were not found: ask Google which ones this key can use
@@ -89,8 +89,9 @@ export async function POST(request: Request) {
       });
       lastStatus = res.status;
 
-      if (res.status === 404) {
-        console.error(`analyze: model ${model} not found, trying another`);
+      if (res.status === 404 || res.status >= 500) {
+        // Not found, or Google is overloaded / unavailable (503): try another model instead of giving up.
+        console.error(`analyze: model ${model} answered ${res.status}, trying another`);
         if (model === workingModel) workingModel = undefined;
         continue;
       }
