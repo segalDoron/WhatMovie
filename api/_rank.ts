@@ -20,7 +20,7 @@ export type SignalKind = "favorite" | "like" | "dislike" | "seed";
 export interface Signal { kind: SignalKind; f: Features }
 
 export interface RankConfig {
-  weights: { taste: number; favorite: number; quality: number; dislike: number; discovery: number };
+  weights: { taste: number; favorite: number; quality: number; dislike: number; discovery: number; fit: number };
   signal: { favorite: number; like: number; dislike: number; seed: number };
   feature: { g: number; k: number; d: number; c: number; y: number; l: number };
   ramp: { taste: number; favorite: number; dislike: number }; // how much history gives a component its full weight
@@ -42,7 +42,8 @@ export interface RankConfig {
 }
 
 export const DEFAULT_RANK: RankConfig = {
-  weights: { taste: 0.4, favorite: 0.2, quality: 0.15, dislike: 0.15, discovery: 0.1 },
+  // fit = how exactly a movie matches the genres the user asked for (a comedy-only movie beats a comedy-action one).
+  weights: { taste: 0.3, favorite: 0.15, quality: 0.25, dislike: 0.1, discovery: 0.05, fit: 0.15 },
   signal: { favorite: 5, like: 2, dislike: -4, seed: 3 },
   feature: { g: 1, k: 1, d: 0.8, c: 0.6, y: 0.3, l: 0.3 },
   ramp: { taste: 20, favorite: 3, dislike: 2 },
@@ -136,7 +137,7 @@ export interface Ranked<T> {
   f: Features;
   base: number; // 0..100
   discovery: number; // 0..1
-  parts: { taste: number; favorite: number; quality: number; dislike: number; discovery: number };
+  parts: { taste: number; favorite: number; quality: number; dislike: number; discovery: number; fit: number };
   vec: Vec;
 }
 
@@ -153,7 +154,19 @@ export function qualityOf(f: Features, cfg: RankConfig): number {
  * Dislikes only lower similarity; they never remove a genre. Components without data are neutral (0.5), and the weight of
  * the personal components grows with the amount of history, the rest going to quality.
  */
-export function scorePool<T extends { f: Features }>(items: T[], signals: Signal[], cfg: RankConfig = DEFAULT_RANK): Ranked<T>[] {
+/** The genres the user asked for: every one of `must` is required, at least one of `any` is. Empty = no genre filter. */
+export interface GenreAsk { must: number[]; any: number[] }
+
+/** 1 when the movie is exactly what was asked (only the requested genres), less the more other genres it carries. */
+export function fitOf(f: Features, ask: GenreAsk): number {
+  const wanted = new Set([...ask.must, ...ask.any]);
+  if (!wanted.size || !f.g.length) return 0.5; // no genre filter, or no data: neutral
+  const hit = f.g.filter((x) => wanted.has(x)).length;
+  const coverage = ask.must.length ? ask.must.filter((x) => f.g.includes(x)).length / ask.must.length : Math.min(1, hit / Math.min(2, ask.any.length));
+  return clamp01(coverage * (hit / f.g.length));
+}
+
+export function scorePool<T extends { f: Features }>(items: T[], signals: Signal[], cfg: RankConfig = DEFAULT_RANK, ask: GenreAsk = { must: [], any: [] }): Ranked<T>[] {
   if (!items.length) return [];
   const vecs = items.map((i) => vectorOf(i.f, cfg));
   const sig = signals.map((s) => ({ kind: s.kind, vec: vectorOf(s.f, cfg) }));
@@ -188,15 +201,20 @@ export function scorePool<T extends { f: Features }>(items: T[], signals: Signal
   });
 
   const w = cfg.weights;
+  const hasAsk = ask.must.length + ask.any.length > 0;
+  const fit = items.map((i) => (hasAsk ? fitOf(i.f, ask) : 0.5));
   const cT = clamp01(strength / cfg.ramp.taste);
   const cF = clamp01(favCount / cfg.ramp.favorite);
   const cD = clamp01(dislikes.length / cfg.ramp.dislike);
   const eff = { taste: w.taste * cT, favorite: w.favorite * cF, dislike: w.dislike * cD };
-  const quality_w = w.quality + (w.taste - eff.taste) + (w.favorite - eff.favorite) + (w.dislike - eff.dislike); // little history: lean on quality
+  const fit_w = hasAsk ? w.fit : 0;
+  // Little history, or no genre filter: the weight that is not used goes to quality.
+  const quality_w = w.quality + (w.taste - eff.taste) + (w.favorite - eff.favorite) + (w.dislike - eff.dislike) + (w.fit - fit_w);
 
   return items.map((item, i) => {
-    const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i] };
-    const base = 100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery);
+    const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i], fit: fit[i] };
+    const base =
+      100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery + fit_w * parts.fit);
     return { item, f: item.f, base, discovery: discovery[i], parts, vec: vecs[i] };
   });
 }
@@ -212,10 +230,14 @@ function jaccard(a: number[], b: number[]): number {
   return inter / (a.length + b.length - inter);
 }
 
-function violates<T>(r: Ranked<T>, picked: Ranked<T>[], cfg: RankConfig): boolean {
+/** The genre that counts for the per-genre cap: the first one that is not a genre the user asked for (those are the point of the page). */
+const primaryOf = (f: Features, skip: Set<number>): number | undefined => f.g.find((x) => !skip.has(x));
+
+function violates<T>(r: Ranked<T>, picked: Ranked<T>[], cfg: RankConfig, skip: Set<number>): boolean {
   const f = r.f;
   const count = (test: (p: Features) => boolean) => picked.reduce((n, p) => n + (test(p.f) ? 1 : 0), 0);
-  if (f.g.length && count((p) => p.g[0] === f.g[0]) >= cfg.caps.genre) return true; // same primary genre
+  const primary = primaryOf(f, skip);
+  if (primary !== undefined && count((p) => primaryOf(p, skip) === primary) >= cfg.caps.genre) return true; // same primary genre
   if (f.col && count((p) => p.col === f.col) >= cfg.caps.franchise) return true; // same franchise
   for (const id of [...f.d, ...(f.c.length ? [f.c[0]] : [])]) {
     if (count((p) => p.d.includes(id) || p.c[0] === id) >= cfg.caps.person) return true; // same lead actor or director
@@ -231,14 +253,14 @@ function violates<T>(r: Ranked<T>, picked: Ranked<T>[], cfg: RankConfig): boolea
  * can be preferred for diversity (a similarity penalty and the caps), so a much stronger movie is never passed over.
  * If every movie in that window breaks a cap, the best one is taken anyway: the caps relax instead of leaving the page short.
  */
-function chooseNext<T>(remaining: Ranked<T>[], picked: Ranked<T>[], cfg: RankConfig, key: (r: Ranked<T>) => number): Ranked<T> {
+function chooseNext<T>(remaining: Ranked<T>[], picked: Ranked<T>[], cfg: RankConfig, key: (r: Ranked<T>) => number, skip: Set<number>): Ranked<T> {
   const top = remaining[0];
   const floor = key(top) - cfg.strongerGap;
   let best: Ranked<T> | null = null;
   let bestScore = -Infinity;
   for (const r of remaining) {
     if (key(r) < floor) break;
-    if (violates(r, picked, cfg)) continue;
+    if (violates(r, picked, cfg, skip)) continue;
     let sim = 0;
     for (const p of picked) sim = Math.max(sim, cosine(r.vec, p.vec));
     const adjusted = key(r) * (1 - cfg.similarityPenalty * sim);
@@ -254,7 +276,8 @@ function chooseNext<T>(remaining: Ranked<T>[], picked: Ranked<T>[], cfg: RankCon
  * Picks one page (20) from the pool: about 80% strong matches chosen relevance-first with the diversity rules, and about 20%
  * relevant discoveries placed at every fifth position. Everything not picked comes back ranked, for the next pages.
  */
-export function selectPage<T>(pool: Ranked<T>[], cfg: RankConfig = DEFAULT_RANK): { page: Ranked<T>[]; rest: Ranked<T>[] } {
+export function selectPage<T>(pool: Ranked<T>[], cfg: RankConfig = DEFAULT_RANK, ask: GenreAsk = { must: [], any: [] }): { page: Ranked<T>[]; rest: Ranked<T>[] } {
+  const skip = new Set([...ask.must, ...ask.any]);
   const byBase = [...pool].sort((a, b) => b.base - a.base || a.f.id - b.f.id);
   const n = cfg.page;
   if (byBase.length <= n) return { page: byBase, rest: [] };
@@ -264,7 +287,7 @@ export function selectPage<T>(pool: Ranked<T>[], cfg: RankConfig = DEFAULT_RANK)
   let remaining = byBase;
   const strong: Ranked<T>[] = [];
   while (strong.length < strongN) {
-    const r = chooseNext(remaining, strong, cfg, (x) => x.base);
+    const r = chooseNext(remaining, strong, cfg, (x) => x.base, skip);
     strong.push(r);
     remaining = remaining.filter((x) => x !== r);
   }
@@ -276,7 +299,7 @@ export function selectPage<T>(pool: Ranked<T>[], cfg: RankConfig = DEFAULT_RANK)
   while (disc.length < discoveryN && remaining.length) {
     const relevant = remaining.filter((x) => x.base >= typical - cfg.discoveryRelevanceGap).sort((a, b) => dKey(b) - dKey(a) || a.f.id - b.f.id);
     const useDisc = relevant.length > 0;
-    const r = chooseNext(useDisc ? relevant : remaining, [...strong, ...disc], cfg, useDisc ? dKey : (x) => x.base);
+    const r = chooseNext(useDisc ? relevant : remaining, [...strong, ...disc], cfg, useDisc ? dKey : (x) => x.base, skip);
     disc.push(r);
     remaining = remaining.filter((x) => x !== r);
   }
