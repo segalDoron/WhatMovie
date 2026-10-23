@@ -2,8 +2,6 @@ import type { Movie } from "./types";
 import { Chevron, Sort } from "./Icons";
 import MovieRow from "./MovieRow";
 import Reel from "./Reel";
-import type { Insight } from "./useInsight";
-import "./insight.css";
 
 interface Props {
   movies: Movie[];
@@ -16,10 +14,9 @@ interface Props {
   onMore: () => void;
   sorted: boolean;
   onToggleSort: () => void;
-  insight?: Insight | null; // the AI take, only passed when the user has their own key
 }
 
-export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore, sorted, onToggleSort, insight }: Props) {
+export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore, sorted, onToggleSort }: Props) {
   const t = tabbable ? 0 : -1;
   return (
     <>
@@ -28,14 +25,6 @@ export default function ResultsList({ movies, onOpen, onStartOver, tabbable, has
           <Chevron /> Start over
         </button>
       </header>
-      {insight && (
-        <div className="insight-wrap">
-          <aside className="insight" aria-live="polite">
-            <span className="insight-label">AI take</span>
-            {insight.state === "loading" ? <span className="insight-wait">Thinking…</span> : <p>{insight.text}</p>}
-          </aside>
-        </div>
-      )}
       {movies.length > 1 && (
         <div className="list-tools">
           <button className="sort" aria-pressed={sorted} onClick={onToggleSort} tabIndex={t}>

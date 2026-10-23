@@ -14,8 +14,6 @@ import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
 import { useAuth } from "./AuthProvider";
 import { useUserData, type Favorite, type SavedSearch } from "./userData";
 import { useMediaQuery } from "./useMediaQuery";
-import { useInsight } from "./useInsight";
-import { keyStatus } from "./keyStatus";
 import { preloadImages } from "./preload";
 import { fetchMovies, fetchMore, fetchMovie, type Cursor, type Taste } from "./api";
 import type { Answers, Movie, View } from "./types";
@@ -70,22 +68,17 @@ export default function App() {
   useEffect(() => {
     if (!user) setAccountOpen(false);
   }, [user]);
-  // Whenever someone is signed in (after a sign-in or a page load) check whether they saved their own Gemini key.
-  // The analysis only runs when they did. Right after a sign-in or sign-up without a key, open the add-key screen.
+  // Right after a sign-in or sign-up, if no Gemini key is saved yet, open the add-key screen.
   const justSignedInRef = useRef(justSignedIn);
   justSignedInRef.current = justSignedIn;
   const userId = user?.id ?? null;
   useEffect(() => {
-    if (!userId) {
-      keyStatus.set(null);
-      return;
-    }
+    if (!userId || !justSignedInRef.current) return;
     let live = true;
     getKeyStatus()
       .then((s) => {
         if (!live) return;
-        keyStatus.set(s.hasKey);
-        if (justSignedInRef.current && !s.hasKey) {
+        if (!s.hasKey) {
           setAccountStart("settings");
           setAccountOpen(true);
         }
@@ -105,7 +98,6 @@ export default function App() {
     dislikes: votes.dislike.map((m) => m.id),
     watched: watched.map((m) => m.id),
   };
-  const { insight, start: startInsight, clear: clearInsight } = useInsight();
 
   const [loginDismissed, setLoginDismissed] = useState(false);
   const loginOpen = !authLoading && !user && !loginDismissed;
@@ -185,7 +177,6 @@ export default function App() {
       else if (s?.view === "error") setView("error");
       else {
         moreToken.current++;
-        clearInsight();
         setLoadingMore(false);
         setView("form");
         const pending = pendingSearch.current;
@@ -213,7 +204,6 @@ export default function App() {
   const submit: React.ComponentProps<typeof QuestionForm>["onSubmit"] = async (answers) => {
     const id = ++requestId.current;
     addSearch(answers); // keeps the last 5 searches
-    clearInsight();
     pushNav({ view: "loading" });
     setView("loading");
     try {
@@ -228,7 +218,6 @@ export default function App() {
       setMoreMessage("");
       replaceNav({ view: "results" });
       setView("results");
-      startInsight(answers, result.movies); // does nothing unless the user has their own Gemini key
     } catch (e) {
       if (id !== requestId.current) return;
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -407,7 +396,6 @@ export default function App() {
                   onMore={loadMore}
                   sorted={sortByRating}
                   onToggleSort={() => setSortByRating((v) => !v)}
-                  insight={insight}
                 />
               </section>
             </div>

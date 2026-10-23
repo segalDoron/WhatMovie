@@ -39,6 +39,13 @@ export interface RankConfig {
   refillBelow: number; // fetch another batch when fewer candidates are buffered
   maxBatches: number; // exploration budget per request when fewer than a page is available
   buffer: number; // ranked movies kept for the next pages
+  // Gemini (only with the user's own key): the best unscored candidates are checked in one request.
+  geminiBatch: number; // candidates sent per request
+  geminiWeight: number; // share of the final score that comes from Gemini
+  geminiMaxRemove: number; // at most this share of the sent candidates can be removed as "does not fit"
+  geminiRejectConfidence: number; // Gemini must be at least this sure before a movie is removed
+  geminiBudget: number; // ms allowed for the request
+  geminiStartBy: number; // ms after the search started: later than this, Gemini is skipped to protect the time limit
 }
 
 export const DEFAULT_RANK: RankConfig = {
@@ -62,6 +69,12 @@ export const DEFAULT_RANK: RankConfig = {
   refillBelow: 40,
   maxBatches: 3,
   buffer: 60,
+  geminiBatch: 36,
+  geminiWeight: 0.25,
+  geminiMaxRemove: 0.3,
+  geminiRejectConfidence: 0.6,
+  geminiBudget: 4500,
+  geminiStartBy: 5000,
 };
 
 /** DEFAULT_RANK with any valid numbers from the RANK_CONFIG environment variable laid over it. */

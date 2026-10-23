@@ -172,14 +172,15 @@ export default function GeminiKeyHelp() {
         <h2 id="why">Why add a key?</h2>
         <p>
           Movie Tonight uses Google's Gemini AI to read your answers (mood, genres, who's watching, and so on) and turn them into a
-          precise search: the right genres, genres to avoid, and a theme keyword when you imply one. A Gemini key is the pass that
-          lets the app ask Gemini on your behalf.
+          precise search. With your own key, Gemini also looks at the best movies the search found, rates each one against your answers and
+          the movies you liked, favorited and disliked, removes the ones that clearly don't fit, and helps put the best matches first. A
+          Gemini key is the pass that lets the app ask Gemini on your behalf.
         </p>
         <p>With your own key:</p>
         <ul>
           <li><strong>It runs on your own allowance.</strong> Gemini limits how much each key can be used. Your key isn't shared with other people, so the fine-tuning is less likely to be skipped when the app's shared key is busy.</li>
           <li><strong>You stay in control.</strong> The usage shows in your own Google account, and you can remove the key from the app at any time.</li>
-          <li><strong>It unlocks upcoming AI features.</strong> AI analysis features planned for the app will use only your own key.</li>
+          <li><strong>Your list is checked by Gemini.</strong> The extra rating and the removal of poor fits only happen with your own key. The app never uses its own key for this.</li>
         </ul>
         <p className="hp-note">Google offers a free tier for Gemini with limits. Use above those limits is billed by Google to your account, so check Google's current pricing before you rely on it.</p>
       </section>
@@ -188,10 +189,10 @@ export default function GeminiKeyHelp() {
         <h2 id="without">What if I don't add one?</h2>
         <p>Everything still works. Nothing is locked, and you don't have to sign up for anything at Google.</p>
         <ul>
-          <li><strong>Search:</strong> the app uses its own shared Gemini key for the same fine-tuning.</li>
+          <li><strong>Search:</strong> the app uses its own shared Gemini key for the search fine-tuning, and ranks your list with its built-in scoring (your likes, favorites, dislikes, ratings and genres).</li>
           <li><strong>If the shared key is busy or unavailable:</strong> the search falls back to the app's built-in rules. It still filters by genre, age rating, stars, years and streaming service, but without Gemini's extra fine-tuning.</li>
           <li><strong>The effect on results:</strong> you still get good results, but they may be a little less tailored, mostly for unusual combinations of answers.</li>
-          <li><strong>AI analysis features:</strong> these need your own key, so they won't be available without one.</li>
+          <li><strong>Gemini's check of your list:</strong> it needs your own key, so without one it is skipped.</li>
         </ul>
       </section>
 
