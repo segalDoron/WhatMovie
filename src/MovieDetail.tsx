@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Movie } from "./types";
-import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play } from "./Icons";
+import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play, Eye } from "./Icons";
 import { fetchCast, fetchTrailer, type CastMember } from "./api";
 import { useUserData } from "./userData";
 import TrailerModal from "./TrailerModal";
+import "./watched.css";
 
 interface Props {
   movie: Movie | null;
@@ -25,8 +26,9 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const { votes, isFavorite, toggleFavorite, vote } = useUserData();
+  const { votes, isFavorite, toggleFavorite, vote, isWatched, toggleWatched } = useUserData();
   const isFav = !!movie && isFavorite(movie.id);
+  const watched = !!movie && isWatched(movie.id);
 
   useEffect(() => {
     if (!movie) return;
@@ -83,6 +85,16 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
                 onClick={() => toggleFavorite(movie)}
               >
                 <Heart filled={isFav} />
+              </button>
+              <button
+                className="react watched"
+                aria-pressed={watched}
+                aria-label={watched ? "Remove from watched" : "Mark as watched"}
+                title={watched ? "Watched: it won't be recommended again" : "Mark as watched"}
+                tabIndex={t}
+                onClick={() => toggleWatched(movie)}
+              >
+                <Eye />
               </button>
             </div>
             {trailerKey && (

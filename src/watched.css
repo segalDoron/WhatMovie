@@ -1,0 +1,2 @@
+/* ---------- "Watched" button next to like / dislike / favorite ---------- */
+.react.watched[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: var(--on-primary); }

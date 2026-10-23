@@ -15,7 +15,7 @@ import { useAuth } from "./AuthProvider";
 import { useUserData, type Favorite, type SavedSearch } from "./userData";
 import { useMediaQuery } from "./useMediaQuery";
 import { preloadImages } from "./preload";
-import { fetchMovies, fetchMore, fetchMovie, type Cursor } from "./api";
+import { fetchMovies, fetchMore, fetchMovie, type Cursor, type Taste } from "./api";
 import type { Answers, Movie, View } from "./types";
 import "./styles-additions.css";
 
@@ -68,20 +68,36 @@ export default function App() {
   useEffect(() => {
     if (!user) setAccountOpen(false);
   }, [user]);
-  // Right after a successful sign-in or sign-up: if no Gemini key is saved yet, open the add-key modal.
+  // Right after a sign-in or sign-up, if no Gemini key is saved yet, open the add-key screen.
+  const justSignedInRef = useRef(justSignedIn);
+  justSignedInRef.current = justSignedIn;
+  const userId = user?.id ?? null;
   useEffect(() => {
-    if (!justSignedIn || !user) return;
+    if (!userId || !justSignedInRef.current) return;
+    let live = true;
     getKeyStatus()
       .then((s) => {
-        ackSignIn();
+        if (!live) return;
         if (!s.hasKey) {
           setAccountStart("settings");
           setAccountOpen(true);
         }
+        ackSignIn();
       })
-      .catch(() => ackSignIn());
-  }, [justSignedIn, user, ackSignIn]);
-  const { favorites, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+      .catch(() => live && ackSignIn());
+    return () => {
+      live = false;
+    };
+  }, [userId, ackSignIn]);
+  const { favorites, votes, watched, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+  // The latest taste, read at the moment a search or "show more" is sent (newest first).
+  const tasteRef = useRef<Taste>({ favorites: [], likes: [], dislikes: [], watched: [] });
+  tasteRef.current = {
+    favorites: favorites.map((m) => m.id),
+    likes: votes.like.map((m) => m.id),
+    dislikes: votes.dislike.map((m) => m.id),
+    watched: watched.map((m) => m.id),
+  };
 
   const [loginDismissed, setLoginDismissed] = useState(false);
   const loginOpen = !authLoading && !user && !loginDismissed;
@@ -191,7 +207,7 @@ export default function App() {
     pushNav({ view: "loading" });
     setView("loading");
     try {
-      const result = await fetchMovies(answers);
+      const result = await fetchMovies(answers, tasteRef.current);
       if (id !== requestId.current) return; // user went back while loading
       answersRef.current = answers;
       moreToken.current++;
@@ -227,7 +243,7 @@ export default function App() {
     setLoadingMore(true);
     setMoreMessage("");
     try {
-      const r = await fetchMore(answersRef.current, cursor, movies.map((m) => m.id));
+      const r = await fetchMore(answersRef.current, cursor, movies.map((m) => m.id), tasteRef.current);
       if (token !== moreToken.current) return;
       const have = new Set(movies.map((m) => m.id));
       const fresh = r.movies.filter((m) => !have.has(m.id));

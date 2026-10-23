@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { getKeyStatus, removeKey, saveKey, type KeyStatus } from "./settingsApi";
-import { resetAnalysis } from "./analysis";
 
 export interface Note {
   text: string;
@@ -32,7 +31,10 @@ export function useKeySettings(active: boolean) {
     let live = true;
     setLoading(true);
     getKeyStatus()
-      .then((s) => live && setStatus(s))
+      .then((s) => {
+        if (!live) return;
+        setStatus(s);
+      })
       .catch((e) => live && setError(e instanceof Error ? e.message : "Couldn't load your settings."))
       .finally(() => live && setLoading(false));
     return () => {
@@ -52,8 +54,8 @@ export function useKeySettings(active: boolean) {
     setError("");
     setNote(null);
     try {
-      setStatus(await action());
-      resetAnalysis();
+      const next = await action();
+      setStatus(next);
       setValue("");
       setShow(false);
       setNote(done);
