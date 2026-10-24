@@ -20,6 +20,7 @@ export interface Features {
   va: number; // vote average
   vc: number; // vote count
   pop: number; // TMDB popularity
+  t?: string[]; // tone tags derived from all of the movie's keywords (dark comedy, slapstick, ...)
 }
 
 export type SignalKind = "favorite" | "like" | "dislike" | "seed";
@@ -238,7 +239,7 @@ export function scorePool<T extends { f: Features }>(
   return items.map((item, i) => {
     const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i] };
     const base = 100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery);
-    const rel = genreRelevance(item.f.g, ask, genres);
+    const rel = genreRelevance(item.f.g, ask, genres, item.f.t);
     return { item, f: item.f, base, discovery: discovery[i], parts, tier: rel.tier, relevance: rel.score, qp: quality_w * (parts.quality - 0.5) * 100, key: 0, vec: vecs[i] };
   });
 }
