@@ -1,6 +1,10 @@
 import type { Answers, Movie } from "./types";
 import { supabase } from "./supabase";
 
+/** The user's taste as movie ids only: favorites, likes and dislikes steer the ranking, and with watched they are never offered again. */
+export interface Taste { favorites: number[]; likes: number[]; dislikes: number[]; watched: number[] }
+export const NO_TASTE: Taste = { favorites: [], likes: [], dislikes: [], watched: [] };
+
 /** Opaque position in the search ("where to continue"). Sent back to the server for "show more". */
 export type Cursor = unknown;
 export interface SearchResult { movies: Movie[]; cursor: Cursor | null }
@@ -27,11 +31,11 @@ async function search(body: object): Promise<SearchResult> {
   return { movies: data.movies as Movie[], cursor: data.cursor ?? null };
 }
 
-export const fetchMovies = (answers: Answers) => search({ mode: "answers", answers });
+export const fetchMovies = (answers: Answers, taste: Taste = NO_TASTE) => search({ mode: "answers", answers, taste });
 
 /** The next batch: continues from the cursor and skips movies already shown. */
-export const fetchMore = (answers: Answers, cursor: Cursor, seen: number[]) =>
-  search({ mode: "more", answers, cursor, seen });
+export const fetchMore = (answers: Answers, cursor: Cursor, seen: number[], taste: Taste = NO_TASTE) =>
+  search({ mode: "more", answers, cursor, seen, taste });
 
 export interface CastMember { name: string; character: string }
 const castCache = new Map<number, CastMember[]>();

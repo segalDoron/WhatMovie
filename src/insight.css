@@ -1,0 +1,9 @@
+/* ---------- AI take above the results ---------- */
+.insight-wrap { width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 16px 12px; }
+.insight {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius);
+  border: 1.5px solid var(--line); background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+}
+.insight-label { font-size: .75rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.insight p { margin: 0; }
+.insight-wait { color: var(--muted); }
