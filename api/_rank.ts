@@ -1,5 +1,11 @@
 // Personalized ranking and diversity. Pure functions: no network. Weights and limits live in DEFAULT_RANK
 // (override any of them with a RANK_CONFIG JSON environment variable, e.g. {"weights":{"taste":0.5}}).
+//
+// Order of importance: 1) the genre match with what the user asked for, 2) the personalized score, 3) Gemini's blend, 4) diversity.
+// The genre match is worth `tierStep` TMDB rating points per level (strong, compatible, moderate, conflicting), so a better match
+// wins when the ratings are within that distance and a clearly higher rating wins when they are further apart.
+import { DEFAULT_GENRES, genreRelevance, type GenreAsk, type GenreConfig } from "./_genres.js";
+export type { GenreAsk } from "./_genres.js";
 
 /** Everything the ranking needs to know about one movie. Small enough to travel in a cursor. */
 export interface Features {
@@ -20,7 +26,7 @@ export type SignalKind = "favorite" | "like" | "dislike" | "seed";
 export interface Signal { kind: SignalKind; f: Features }
 
 export interface RankConfig {
-  weights: { taste: number; favorite: number; quality: number; dislike: number; discovery: number; fit: number };
+  weights: { taste: number; favorite: number; quality: number; dislike: number; discovery: number };
   signal: { favorite: number; like: number; dislike: number; seed: number };
   feature: { g: number; k: number; d: number; c: number; y: number; l: number };
   ramp: { taste: number; favorite: number; dislike: number }; // how much history gives a component its full weight
@@ -29,10 +35,13 @@ export interface RankConfig {
   seedBoost: number; // points added to movies TMDB recommends for the "loved" / this-or-that picks
   page: number;
   discoveryShare: number;
-  discoveryRelevanceGap: number; // a discovery must score within this many points of the typical strong match
+  tierStep: number; // TMDB rating points one genre-match level is worth
+  personalSpan: number; // TMDB rating points the personalized score can move a movie (kept under tierStep: genres come first)
+  discoveryRelevanceGap: number; // a discovery must rank within this many key points (0.1 rating = 1 point) of the typical strong match
+  discoveryPoints: number; // key points a fully "discovery" movie gains when discoveries are chosen
   similarityPenalty: number;
-  strongerGap: number; // points: diversity may only pass over a movie if a replacement is this close
-  caps: { genre: number; theme: number; franchise: number; person: number };
+  diversityGap: number; // key points: diversity may only pass over a movie for one of the same (or a better) genre tier within this distance
+  caps: { genre: number; theme: number; franchise: number; person: number }; // genre: per page, for each genre the user did not ask for
   themeJaccard: number;
   decadeShare: number;
   batch: number; // TMDB candidates fetched per batch
@@ -49,20 +58,22 @@ export interface RankConfig {
 }
 
 export const DEFAULT_RANK: RankConfig = {
-  // fit = how exactly a movie matches the genres the user asked for (a comedy-only movie beats a comedy-action one).
-  weights: { taste: 0.3, favorite: 0.15, quality: 0.25, dislike: 0.1, discovery: 0.05, fit: 0.15 },
+  weights: { taste: 0.4, favorite: 0.2, quality: 0.15, dislike: 0.15, discovery: 0.1 },
   signal: { favorite: 5, like: 2, dislike: -4, seed: 3 },
   feature: { g: 1, k: 1, d: 0.8, c: 0.6, y: 0.3, l: 0.3 },
   ramp: { taste: 20, favorite: 3, dislike: 2 },
   quality: { minVotes: 500, mean: 6.5, low: 5, high: 9 },
   dislikeRiskAt: 0.6,
-  seedBoost: 10,
+  seedBoost: 20,
   page: 20,
   discoveryShare: 0.2,
+  tierStep: 1,
+  personalSpan: 0.9,
   discoveryRelevanceGap: 15,
+  discoveryPoints: 20,
   similarityPenalty: 0.15,
-  strongerGap: 30,
-  caps: { genre: 5, theme: 3, franchise: 2, person: 3 },
+  diversityGap: 8,
+  caps: { genre: 8, theme: 3, franchise: 2, person: 3 },
   themeJaccard: 0.5,
   decadeShare: 0.6,
   batch: 50,
@@ -150,15 +161,25 @@ export interface Ranked<T> {
   f: Features;
   base: number; // 0..100
   discovery: number; // 0..1
-  parts: { taste: number; favorite: number; quality: number; dislike: number; discovery: number; fit: number };
+  parts: { taste: number; favorite: number; quality: number; dislike: number; discovery: number };
+  tier: number; // genre-match level, 0 = strong ... 4 = weak
+  relevance: number; // 0..100 genre relevance
+  qp: number; // how many of the base points came from quality (rating is counted separately in the sort key)
+  key: number; // sort key in tenths of a rating point, set by selectPage
   vec: Vec;
+}
+
+/** TMDB rating pulled toward the average when there are few votes (rating points, 0..10). */
+export function adjustedRating(f: Features, cfg: RankConfig): number {
+  if (!f.vc && !f.va) return cfg.quality.mean;
+  const { minVotes, mean } = cfg.quality;
+  return (f.vc / (f.vc + minVotes)) * f.va + (minVotes / (f.vc + minVotes)) * mean;
 }
 
 export function qualityOf(f: Features, cfg: RankConfig): number {
   if (!f.vc && !f.va) return 0.5; // missing data is neutral
-  const { minVotes, mean, low, high } = cfg.quality;
-  const adjusted = (f.vc / (f.vc + minVotes)) * f.va + (minVotes / (f.vc + minVotes)) * mean; // few votes pull toward the average
-  return clamp01((adjusted - low) / (high - low));
+  const { low, high } = cfg.quality;
+  return clamp01((adjustedRating(f, cfg) - low) / (high - low));
 }
 
 /**
@@ -167,19 +188,13 @@ export function qualityOf(f: Features, cfg: RankConfig): number {
  * Dislikes only lower similarity; they never remove a genre. Components without data are neutral (0.5), and the weight of
  * the personal components grows with the amount of history, the rest going to quality.
  */
-/** The genres the user asked for: every one of `must` is required, at least one of `any` is. Empty = no genre filter. */
-export interface GenreAsk { must: number[]; any: number[] }
-
-/** 1 when the movie is exactly what was asked (only the requested genres), less the more other genres it carries. */
-export function fitOf(f: Features, ask: GenreAsk): number {
-  const wanted = new Set([...ask.must, ...ask.any]);
-  if (!wanted.size || !f.g.length) return 0.5; // no genre filter, or no data: neutral
-  const hit = f.g.filter((x) => wanted.has(x)).length;
-  const coverage = ask.must.length ? ask.must.filter((x) => f.g.includes(x)).length / ask.must.length : Math.min(1, hit / Math.min(2, ask.any.length));
-  return clamp01(coverage * (hit / f.g.length));
-}
-
-export function scorePool<T extends { f: Features }>(items: T[], signals: Signal[], cfg: RankConfig = DEFAULT_RANK, ask: GenreAsk = { must: [], any: [] }): Ranked<T>[] {
+export function scorePool<T extends { f: Features }>(
+  items: T[],
+  signals: Signal[],
+  cfg: RankConfig = DEFAULT_RANK,
+  ask: GenreAsk = { must: [], any: [] },
+  genres: GenreConfig = DEFAULT_GENRES
+): Ranked<T>[] {
   if (!items.length) return [];
   const vecs = items.map((i) => vectorOf(i.f, cfg));
   const sig = signals.map((s) => ({ kind: s.kind, vec: vectorOf(s.f, cfg) }));
@@ -214,25 +229,32 @@ export function scorePool<T extends { f: Features }>(items: T[], signals: Signal
   });
 
   const w = cfg.weights;
-  const hasAsk = ask.must.length + ask.any.length > 0;
-  const fit = items.map((i) => (hasAsk ? fitOf(i.f, ask) : 0.5));
   const cT = clamp01(strength / cfg.ramp.taste);
   const cF = clamp01(favCount / cfg.ramp.favorite);
   const cD = clamp01(dislikes.length / cfg.ramp.dislike);
   const eff = { taste: w.taste * cT, favorite: w.favorite * cF, dislike: w.dislike * cD };
-  const fit_w = hasAsk ? w.fit : 0;
-  // Little history, or no genre filter: the weight that is not used goes to quality.
-  const quality_w = w.quality + (w.taste - eff.taste) + (w.favorite - eff.favorite) + (w.dislike - eff.dislike) + (w.fit - fit_w);
+  const quality_w = w.quality + (w.taste - eff.taste) + (w.favorite - eff.favorite) + (w.dislike - eff.dislike); // little history: lean on quality
 
   return items.map((item, i) => {
-    const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i], fit: fit[i] };
-    const base =
-      100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery + fit_w * parts.fit);
-    return { item, f: item.f, base, discovery: discovery[i], parts, vec: vecs[i] };
+    const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i] };
+    const base = 100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery);
+    const rel = genreRelevance(item.f.g, ask, genres);
+    return { item, f: item.f, base, discovery: discovery[i], parts, tier: rel.tier, relevance: rel.score, qp: quality_w * (parts.quality - 0.5) * 100, key: 0, vec: vecs[i] };
   });
 }
 
-/* ---------- Diversity ---------- */
+/* ---------- Final order and diversity ---------- */
+/**
+ * The sort key, in tenths of a rating point: the (vote-adjusted) TMDB rating, plus one `tierStep` for every genre-match level above the
+ * weakest, plus the personalized score (taste, favorites, dislikes, Gemini...) moving it by at most +-personalSpan/2.
+ * So: a better genre match wins when ratings are within a tierStep of each other; a clearly higher rating wins beyond that;
+ * and taste only decides between movies that are otherwise level.
+ */
+export function keyOf<T>(r: Ranked<T>, cfg: RankConfig): number {
+  const personal = r.base - r.qp - 50; // the personalized score without its quality part: the rating is already in the key
+  return 10 * adjustedRating(r.f, cfg) + (4 - r.tier) * cfg.tierStep * 10 + (personal / 100) * cfg.personalSpan * 10;
+}
+
 const decadeOf = (f: Features): number => (f.y ? Math.floor(f.y / 10) : 0);
 
 function jaccard(a: number[], b: number[]): number {
@@ -243,14 +265,11 @@ function jaccard(a: number[], b: number[]): number {
   return inter / (a.length + b.length - inter);
 }
 
-/** The genre that counts for the per-genre cap: the first one that is not a genre the user asked for (those are the point of the page). */
-const primaryOf = (f: Features, skip: Set<number>): number | undefined => f.g.find((x) => !skip.has(x));
-
 function violates<T>(r: Ranked<T>, picked: Ranked<T>[], cfg: RankConfig, skip: Set<number>): boolean {
   const f = r.f;
   const count = (test: (p: Features) => boolean) => picked.reduce((n, p) => n + (test(p.f) ? 1 : 0), 0);
-  const primary = primaryOf(f, skip);
-  if (primary !== undefined && count((p) => primaryOf(p, skip) === primary) >= cfg.caps.genre) return true; // same primary genre
+  // Every genre the user did not ask for counts (the first TMDB genre is not assumed to be the main one).
+  for (const g of f.g) if (!skip.has(g) && count((p) => p.g.includes(g)) >= cfg.caps.genre) return true;
   if (f.col && count((p) => p.col === f.col) >= cfg.caps.franchise) return true; // same franchise
   for (const id of [...f.d, ...(f.c.length ? [f.c[0]] : [])]) {
     if (count((p) => p.d.includes(id) || p.c[0] === id) >= cfg.caps.person) return true; // same lead actor or director
@@ -262,17 +281,18 @@ function violates<T>(r: Ranked<T>, picked: Ranked<T>[], cfg: RankConfig, skip: S
 }
 
 /**
- * Next movie to take. `remaining` is sorted best first by `key`. Only movies within `strongerGap` points of the best one
- * can be preferred for diversity (a similarity penalty and the caps), so a much stronger movie is never passed over.
- * If every movie in that window breaks a cap, the best one is taken anyway: the caps relax instead of leaving the page short.
+ * Next movie to take. `remaining` is sorted best first by `key`. Diversity (a similarity penalty and the caps) may only pass over the
+ * best movie for one of the same or a BETTER genre tier that is within `diversityGap` key points, so a weaker genre match is never
+ * promoted over a stronger one. If every such movie breaks a cap, the best one is taken anyway: the caps relax instead of leaving the page short.
  */
 function chooseNext<T>(remaining: Ranked<T>[], picked: Ranked<T>[], cfg: RankConfig, key: (r: Ranked<T>) => number, skip: Set<number>): Ranked<T> {
   const top = remaining[0];
-  const floor = key(top) - cfg.strongerGap;
+  const floor = key(top) - cfg.diversityGap;
   let best: Ranked<T> | null = null;
   let bestScore = -Infinity;
   for (const r of remaining) {
     if (key(r) < floor) break;
+    if (r.tier > top.tier) continue; // never a weaker genre match
     if (violates(r, picked, cfg, skip)) continue;
     let sim = 0;
     for (const p of picked) sim = Math.max(sim, cosine(r.vec, p.vec));
@@ -287,37 +307,40 @@ function chooseNext<T>(remaining: Ranked<T>[], picked: Ranked<T>[], cfg: RankCon
 
 /**
  * Picks one page (20) from the pool: about 80% strong matches chosen relevance-first with the diversity rules, and about 20%
- * relevant discoveries placed at every fifth position. Everything not picked comes back ranked, for the next pages.
+ * relevant discoveries (same genre level as the strong matches). The page is ordered by the sort key; everything not picked
+ * comes back ranked, for the next pages.
  */
 export function selectPage<T>(pool: Ranked<T>[], cfg: RankConfig = DEFAULT_RANK, ask: GenreAsk = { must: [], any: [] }): { page: Ranked<T>[]; rest: Ranked<T>[] } {
   const skip = new Set([...ask.must, ...ask.any]);
-  const byBase = [...pool].sort((a, b) => b.base - a.base || a.f.id - b.f.id);
+  for (const r of pool) r.key = keyOf(r, cfg);
+  const byKey = [...pool].sort((a, b) => b.key - a.key || a.f.id - b.f.id);
   const n = cfg.page;
-  if (byBase.length <= n) return { page: byBase, rest: [] };
+  if (byKey.length <= n) return { page: byKey, rest: [] };
 
   const discoveryN = Math.round(n * cfg.discoveryShare);
   const strongN = n - discoveryN;
-  let remaining = byBase;
+  let remaining = byKey;
   const strong: Ranked<T>[] = [];
   while (strong.length < strongN) {
-    const r = chooseNext(remaining, strong, cfg, (x) => x.base, skip);
+    const r = chooseNext(remaining, strong, cfg, (x) => x.key, skip);
     strong.push(r);
     remaining = remaining.filter((x) => x !== r);
   }
 
-  const bases = strong.map((s) => s.base).sort((a, b) => a - b);
-  const typical = bases[Math.floor(bases.length / 2)] ?? 0;
-  const dKey = (x: Ranked<T>) => 0.5 * x.base + 50 * x.discovery;
+  const keys = strong.map((s) => s.key).sort((a, b) => a - b);
+  const tiers = strong.map((s) => s.tier).sort((a, b) => a - b);
+  const typicalKey = keys[Math.floor(keys.length / 2)] ?? 0;
+  const typicalTier = tiers[Math.floor(tiers.length / 2)] ?? 0;
+  const dKey = (x: Ranked<T>) => x.key + cfg.discoveryPoints * x.discovery;
   const disc: Ranked<T>[] = [];
   while (disc.length < discoveryN && remaining.length) {
-    const relevant = remaining.filter((x) => x.base >= typical - cfg.discoveryRelevanceGap).sort((a, b) => dKey(b) - dKey(a) || a.f.id - b.f.id);
+    const relevant = remaining.filter((x) => x.tier <= typicalTier && x.key >= typicalKey - cfg.discoveryRelevanceGap).sort((a, b) => dKey(b) - dKey(a) || a.f.id - b.f.id);
     const useDisc = relevant.length > 0;
-    const r = chooseNext(useDisc ? relevant : remaining, [...strong, ...disc], cfg, useDisc ? dKey : (x) => x.base, skip);
+    const r = chooseNext(useDisc ? relevant : remaining, [...strong, ...disc], cfg, useDisc ? dKey : (x) => x.key, skip);
     disc.push(r);
     remaining = remaining.filter((x) => x !== r);
   }
 
-  const page = [...strong].sort((a, b) => b.base - a.base || a.f.id - b.f.id);
-  disc.forEach((d, i) => page.splice(Math.min((i + 1) * 5 - 1, page.length), 0, d)); // positions 5, 10, 15, 20
+  const page = [...strong, ...disc].sort((a, b) => b.key - a.key || a.f.id - b.f.id);
   return { page, rest: remaining };
 }

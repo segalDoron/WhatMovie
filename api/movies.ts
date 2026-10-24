@@ -1,6 +1,7 @@
 // Vercel serverless function. API keys stay on the server (env vars).
 import { createHash } from "node:crypto";
 import { userGeminiKey } from "./_shared.js";
+import { genreConfig } from "./_genres.js";
 import { rankConfig, scorePool, selectPage, type Features, type RankConfig, type Ranked, type Signal } from "./_rank.js";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
@@ -850,7 +851,7 @@ async function search(
 
   const signals = await signalsPromise;
   const ask = { must: plan.mustHave, any: plan.anyOf }; // the genres the user asked for
-  const ranked = scorePool(pool, signals, cfg, ask);
+  const ranked = scorePool(pool, signals, cfg, ask, genreConfig());
   for (const r of ranked) r.base += cfg.seedBoost * (r.item.b ?? 0); // movies TMDB recommends for the "loved" picks rank higher
   // With the user's own Gemini key: rate the best candidates, blend the score in, and drop clear misfits (the page is still filled).
   const gem = await applyGemini(ranked, { apiKey: userKey, a, signals, cfg, started });
