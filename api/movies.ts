@@ -1,7 +1,7 @@
 // Vercel serverless function. API keys stay on the server (env vars).
 import { createHash } from "node:crypto";
 import { userGeminiKey } from "./_shared.js";
-import { genreConfig } from "./_genres.js";
+import { genreConfig, toneTags, TONE_TAGS } from "./_genres.js";
 import { rankConfig, scorePool, selectPage, type Features, type RankConfig, type Ranked, type Signal } from "./_rank.js";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
@@ -72,7 +72,7 @@ interface DetailPayload extends ExtrasPayload {
   vote_average?: number; vote_count?: number; popularity?: number; original_language?: string; release_date?: string; title?: string;
 }
 const DETAILS = { append_to_response: "release_dates,watch/providers,credits,keywords" };
-interface Detail { f: Features; title: string; extras: { rating: string; providers: string[]; runtime?: number } }
+interface Detail { f: Features; kw: number[]; title: string; extras: { rating: string; providers: string[]; runtime?: number } }
 const detailCache = new Map<number, Detail>();
 
 async function loadDetail(id: number): Promise<Detail | null> {
@@ -93,7 +93,7 @@ async function loadDetail(id: number): Promise<Detail | null> {
       vc: d.vote_count ?? 0,
       pop: d.popularity ?? 0,
     };
-    const out = { f, title: d.title ?? "", extras: pickExtras(d) };
+    const out = { f, kw: (d.keywords?.keywords ?? []).map((x) => x.id).slice(0, 100), title: d.title ?? "", extras: pickExtras(d) }; // kw: every keyword, for the tone tags
     if (detailCache.size > 3000) detailCache.clear();
     detailCache.set(id, out);
     return out;
@@ -127,11 +127,38 @@ const basicFeatures = (m: TmdbMovie): Features => ({
   l: m.original_language ?? "", col: 0, va: m.vote_average ?? 0, vc: m.vote_count ?? 0, pop: m.popularity ?? 0,
 });
 
+/**
+ * Keyword ids for the tone tags, looked up by name once and kept while the server instance stays warm (about 35 small calls the first time).
+ * If the lookup mostly fails it is tried again later; without tags the genre ranking simply uses the genre labels alone.
+ */
+let toneMapPromise: Promise<Map<number, string[]>> | null = null;
+function toneKeywordMap(): Promise<Map<number, string[]>> {
+  if (toneMapPromise) return toneMapPromise;
+  const jobs = Object.entries(genreConfig().toneKeywords).flatMap(([tag, names]) => names.map((name) => ({ tag, name })));
+  toneMapPromise = (async () => {
+    const byId = new Map<number, string[]>();
+    let failed = 0;
+    await mapLimit(jobs, 10, async ({ tag, name }) => {
+      try {
+        const r = await tmdb<{ results: { id: number; name: string }[] }>("/search/keyword", { query: name });
+        const hit = r.results.find((x) => x.name.toLowerCase() === name.toLowerCase());
+        if (hit) byId.set(hit.id, [...new Set([...(byId.get(hit.id) ?? []), tag])]);
+      } catch {
+        failed++;
+      }
+    });
+    if (failed > jobs.length / 2) toneMapPromise = null;
+    return byId;
+  })();
+  return toneMapPromise;
+}
+
 async function hydrate(list: TmdbMovie[], g: Map<number, string>): Promise<Item[]> {
-  const details = await mapLimit(list, 12, (m) => loadDetail(m.id));
+  const [details, tone] = await Promise.all([mapLimit(list, 12, (m) => loadDetail(m.id)), toneKeywordMap()]);
   return list.map((m, i) => {
     const movie = toMovie(m, g);
     const d = details[i];
+    if (d && tone.size && !d.f.t) d.f.t = toneTags(d.kw, tone);
     if (d) Object.assign(movie, d.extras); // on failure the rating and providers stay empty
     return { movie, f: d?.f ?? basicFeatures(m) };
   });
@@ -613,6 +640,8 @@ function cleanItem(o: unknown): Item | null {
     id: f.id as number, g: ints(f.g, 8), k: ints(f.k, 15), c: ints(f.c, 5), d: ints(f.d, 3), y: num(f.y), l: text(f.l, 5),
     col: Number.isInteger(f.col) ? (f.col as number) : 0, va: num(f.va), vc: num(f.vc), pop: num(f.pop),
   };
+  const tags = (Array.isArray(f.t) ? f.t : []).filter((x): x is string => typeof x === "string" && TONE_TAGS.includes(x)).slice(0, 8);
+  if (tags.length) feat.t = tags;
   const b = clamp(num(it?.b), 0, 1);
   const rated = it?.gs !== undefined && Number.isFinite(Number(it.gs));
   return { movie, f: feat, ...(b ? { b } : {}), ...(rated ? { gs: clamp(num(it?.gs), 0, 100), gc: clamp(num(it?.gc), 0, 1) } : {}) };
