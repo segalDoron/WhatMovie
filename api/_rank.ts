@@ -4,7 +4,7 @@
 // Order of importance: 1) the genre match with what the user asked for, 2) the personalized score, 3) Gemini's blend, 4) diversity.
 // The genre match is worth `tierStep` TMDB rating points per level (strong, compatible, moderate, conflicting), so a better match
 // wins when the ratings are within that distance and a clearly higher rating wins when they are further apart.
-import { DEFAULT_GENRES, genreRelevance, type GenreAsk, type GenreConfig } from "./_genres.js";
+import { DEFAULT_GENRES, cachedRelevance, type GenreAsk, type GenreConfig } from "./_genres.js";
 export type { GenreAsk } from "./_genres.js";
 
 /** Everything the ranking needs to know about one movie. Small enough to travel in a cursor. */
@@ -239,7 +239,7 @@ export function scorePool<T extends { f: Features }>(
   return items.map((item, i) => {
     const parts = { taste: tasteN[i], favorite: favN[i], quality: quality[i], dislike: avoid[i], discovery: discovery[i] };
     const base = 100 * (eff.taste * parts.taste + eff.favorite * parts.favorite + quality_w * parts.quality + eff.dislike * parts.dislike + w.discovery * parts.discovery);
-    const rel = genreRelevance(item.f.g, ask, genres, item.f.t);
+    const rel = cachedRelevance(item.f.g, ask, genres, item.f.t);
     return { item, f: item.f, base, discovery: discovery[i], parts, tier: rel.tier, relevance: rel.score, qp: quality_w * (parts.quality - 0.5) * 100, key: 0, vec: vecs[i] };
   });
 }
