@@ -177,3 +177,30 @@ export function genreRelevance(genres: number[], ask: GenreAsk, cfg: GenreConfig
   }
   return done(score);
 }
+
+/* ---------- Cache: the relevance of a movie for a request is computed once ---------- */
+// Keyed by what the result depends on: the requested genres, the movie's genres and tone tags, and a version of the configuration
+// (a change to GENRE_CONFIG changes the version, so old results are never reused).
+const versions = new WeakMap<GenreConfig, string>();
+function versionOf(cfg: GenreConfig): string {
+  let v = versions.get(cfg);
+  if (!v) {
+    const text = JSON.stringify(cfg);
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+    v = (h >>> 0).toString(36);
+    versions.set(cfg, v);
+  }
+  return v;
+}
+
+const relevanceCache = new Map<string, Relevance>();
+export function cachedRelevance(genres: number[], ask: GenreAsk, cfg: GenreConfig = DEFAULT_GENRES, tags: string[] = []): Relevance {
+  const key = `${versionOf(cfg)}|${ask.must.join(",")}|${ask.any.join(",")}|${genres.join(",")}|${[...tags].sort().join(",")}`;
+  const hit = relevanceCache.get(key);
+  if (hit) return hit;
+  const out = genreRelevance(genres, ask, cfg, tags);
+  if (relevanceCache.size > 20000) relevanceCache.clear();
+  relevanceCache.set(key, out);
+  return out;
+}
