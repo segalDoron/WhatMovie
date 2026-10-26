@@ -73,13 +73,24 @@ export function decryptKey(stored: string, userId: string): string {
  * no token, an expired session, no saved key or any error all mean "use the server's key instead".
  */
 export async function userGeminiKey(request: Request): Promise<string | null> {
+  return (await userContext(request)).geminiKey;
+}
+
+/** Who is asking (when signed in with a fresh session) and their own Gemini key (when saved). Never throws and never rejects a request. */
+export async function userContext(request: Request): Promise<{ userId: string | null; geminiKey: string | null }> {
   try {
-    if (!request.headers.get("authorization")) return null;
+    if (!request.headers.get("authorization")) return { userId: null, geminiKey: null };
     const auth = await authenticate(request, { touch: false });
-    if (auth instanceof Response) return null;
-    const { data } = await admin().from("user_settings").select("gemini_key_enc").eq("user_id", auth.user.id).maybeSingle();
-    return data ? decryptKey(data.gemini_key_enc, auth.user.id) : null;
+    if (auth instanceof Response) return { userId: null, geminiKey: null };
+    let geminiKey: string | null = null;
+    try {
+      const { data } = await admin().from("user_settings").select("gemini_key_enc").eq("user_id", auth.user.id).maybeSingle();
+      geminiKey = data ? decryptKey(data.gemini_key_enc, auth.user.id) : null;
+    } catch {
+      geminiKey = null;
+    }
+    return { userId: auth.user.id, geminiKey };
   } catch {
-    return null;
+    return { userId: null, geminiKey: null };
   }
 }

@@ -14,3 +14,9 @@ Answers become a search plan: rules first, then Gemini refines it (genres, clash
 ## Tweaks
 - Palette: edit the CSS variables at the top of `src/styles.css`.
 - `WATCH_REGION` (default `US`) controls streaming availability.
+
+## Matrics
+select * from rec_rates_by_position; shows like, dislike, and favorite rates for positions 1–5, 6–10, 11–20, and so on. If personalization works, the top positions should be liked more than the lower ones.
+select * from rec_rates_by_tmdb_order; shows the same by the order TMDB returned the movies in. Compare it with the table above to see whether your ranking beats TMDB’s default order.
+select * from rec_performance; shows daily searches, average and slowest time to the first 20, and TMDB and Gemini calls.
+select * from rec_diversity; shows the variety of the pages.
