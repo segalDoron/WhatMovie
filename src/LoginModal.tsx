@@ -150,6 +150,7 @@ export default function LoginModal({ expired, onDismiss }: Props) {
               ))}
             </ul>
           )}
+          {mode === "signup" && <p className="lm-fine">We use anonymous usage data to improve recommendations. You can turn it off any time in your account.</p>}
           {error && <p className="lm-error" role="alert">{error}</p>}
           {info && <p className="lm-info" role="status">{info}</p>}
 

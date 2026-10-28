@@ -1,6 +1,7 @@
 // Vercel serverless function. API keys stay on the server (env vars).
-import { createHash } from "node:crypto";
-import { userGeminiKey } from "./_shared.js";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { admin, userContext } from "./_shared.js";
 import { genreConfig, toneTags, TONE_TAGS } from "./_genres.js";
 import { rankConfig, scorePool, selectPage, type Features, type RankConfig, type Ranked, type Signal } from "./_rank.js";
 const TMDB = "https://api.themoviedb.org/3";
@@ -16,7 +17,12 @@ interface Movie {
   poster: string | null; backdrop: string | null; overview: string; rating: string; providers: string[]; runtime?: number;
 }
 
+// Counters for the request being served (TMDB and Gemini calls), for the metrics.
+const counters = new AsyncLocalStorage<{ tmdb: number; gemini: number }>();
+
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  const c = counters.getStore();
+  if (c) c.tmdb++;
   const url = new URL(TMDB + path);
   url.searchParams.set("api_key", process.env.TMDB_API_KEY ?? "");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
@@ -119,7 +125,7 @@ async function mapLimit<T, R>(list: T[], limit: number, fn: (x: T) => Promise<R>
 
 /** A movie ready to show, with the features used to rank it. */
 // b: 0..1 share of the seed picks that recommend this movie. gs / gc: Gemini's score (0..100) and confidence (0..1), once it has rated the movie.
-interface Item { movie: Movie; f: Features; b?: number; gs?: number; gc?: number }
+interface Item { movie: Movie; f: Features; b?: number; gs?: number; gc?: number; o?: number } // o: the order TMDB returned it in (batch x 100 + place in the batch)
 
 /** What the discover result already tells us, for when the details call fails. */
 const basicFeatures = (m: TmdbMovie): Features => ({
@@ -295,6 +301,8 @@ async function geminiJson(system: string, user: string, userKey?: string | null,
       const model = queue.shift()!;
       if (tried.includes(model)) continue;
       tried.push(model);
+      const c = counters.getStore();
+      if (c) c.gemini++;
       const res = await fetch(`${GEMINI}/models/${model}:generateContent`, {
         method: "POST",
         signal: signal(),
@@ -504,7 +512,7 @@ function globalExclude(a: Answers): number[] {
 interface Pass { params: Params; plan: Plan }
 // The cursor travels through the browser (opaque to it). It carries the ranked movies that were not shown yet (buf),
 // the seed movie ids (sd), and whether TMDB has nothing more to give for these filters (done).
-interface Cursor { pass: number; page: number; plan: Plan; kw: number[]; sd: number[]; buf: Item[]; rej: number[]; done: boolean }
+interface Cursor { pass: number; page: number; plan: Plan; kw: number[]; sd: number[]; buf: Item[]; rej: number[]; done: boolean; sid: string; pg: number; bn: number }
 
 function buildPasses(a: Answers, plan: Plan, base: Params, kw: number[]): Pass[] {
   const near = asList(a.genres).includes("anime") ? [ANIMATION] : unique([...plan.mustHave, ...plan.anyOf]); // anime stays animation
@@ -644,7 +652,9 @@ function cleanItem(o: unknown): Item | null {
   if (tags.length) feat.t = tags;
   const b = clamp(num(it?.b), 0, 1);
   const rated = it?.gs !== undefined && Number.isFinite(Number(it.gs));
-  return { movie, f: feat, ...(b ? { b } : {}), ...(rated ? { gs: clamp(num(it?.gs), 0, 100), gc: clamp(num(it?.gc), 0, 1) } : {}) };
+  const rawOrder = (o as { o?: unknown } | null)?.o;
+  const order = rawOrder !== undefined && Number.isFinite(Number(rawOrder)) ? clamp(num(rawOrder), 0, 100000) : undefined;
+  return { movie, f: feat, ...(order !== undefined ? { o: order } : {}), ...(b ? { b } : {}), ...(rated ? { gs: clamp(num(it?.gs), 0, 100), gc: clamp(num(it?.gc), 0, 1) } : {}) };
 }
 
 function cleanCursor(c: unknown): Cursor | null {
@@ -659,7 +669,8 @@ function cleanCursor(c: unknown): Cursor | null {
     sortBy: p.sortBy === "vote_average.desc" || p.sortBy === "popularity.desc" ? p.sortBy : undefined,
   };
   const buf = (Array.isArray(o.buf) ? o.buf : []).slice(0, 80).map(cleanItem).filter((x): x is Item => x !== null);
-  return { pass, page, plan, kw: ints(o.kw, 3), sd: ints(o.sd, 12), buf, rej: ints(o.rej, 300), done: o.done === true };
+  return { pass, page, plan, kw: ints(o.kw, 3), sd: ints(o.sd, 12), buf, rej: ints(o.rej, 300), done: o.done === true,
+    sid: typeof o.sid === "string" && /^[0-9a-f-]{36}$/i.test(o.sid) ? o.sid : randomUUID(), pg: clamp(num(o.pg), 0, 1000), bn: clamp(num(o.bn), 0, 1000) };
 }
 
 /* ---------- The user's taste: ids only. Favorites, likes and dislikes become ranking signals; all of them, plus watched, are excluded. ---------- */
@@ -810,15 +821,96 @@ async function applyGemini(
   return { ranked: ranked.filter((r) => !removed.has(r)), rejected: [...removed].map((r) => r.item.movie.id) };
 }
 
+/* ---------- Metrics: what was shown and how it was built (signed-in users only) ---------- */
+interface RequestMeta {
+  requestId: string;
+  requested: number[]; // TMDB genre ids the search asked for
+  sid: string;
+  pageNo: number;
+  ms: number;
+  candidates: number;
+  bufferAfter: number;
+  geminiRated: number;
+  geminiRemoved: number;
+  genreMix: Record<string, number>;
+  diversity: { genres: number; maxGenreShare: number; decades: number };
+  impressions: { movie_id: number; position: number; tmdb_order: number | null; base: number; rank_key: number; tier: number; gemini_score: number | null }[];
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+function buildMeta(sid: string, pageNo: number, ms: number, candidates: number, bufferAfter: number, removed: number, page: Ranked<Item>[], requested: Set<number>, pageSize: number): RequestMeta {
+  const mix: Record<string, number> = { strong: 0, compatible: 0, moderate: 0, conflicting: 0, weak: 0 };
+  const perGenre = new Map<number, number>();
+  const allGenres = new Set<number>();
+  const decades = new Set<number>();
+  for (const r of page) {
+    mix[LEVELS[r.tier]]++;
+    for (const x of r.f.g) {
+      allGenres.add(x);
+      if (!requested.has(x)) perGenre.set(x, (perGenre.get(x) ?? 0) + 1);
+    }
+    if (r.f.y) decades.add(Math.floor(r.f.y / 10));
+  }
+  return {
+    requestId: randomUUID(), requested: [...requested], sid, pageNo, ms, candidates, bufferAfter, geminiRated: page.filter((r) => r.item.gs !== undefined).length, geminiRemoved: removed,
+    genreMix: mix,
+    diversity: { genres: allGenres.size, maxGenreShare: page.length ? Math.round((Math.max(0, ...perGenre.values()) / page.length) * 100) / 100 : 0, decades: decades.size },
+    impressions: page.map((r, i) => ({
+      movie_id: r.item.movie.id, position: (pageNo - 1) * pageSize + i + 1, tmdb_order: r.item.o ?? null,
+      base: round1(r.base), rank_key: round1(r.key), tier: r.tier, gemini_score: r.item.gs ?? null,
+    })),
+  };
+}
+
+let metricsDownUntil = 0; // if the tables are missing or the database is slow, stop trying for a few minutes
+let nextPurgeAt = 0;
+
+/** The user id never goes into the metric tables: only this keyed hash does (same value the database computes with rec_hash()). */
+const hashUser = (userId: string, salt: string): string => createHmac("sha256", salt).update(userId).digest("hex");
+
+/**
+ * Writes the request and its impressions for a user who agreed to share anonymous usage data. Never fails or slows the search by more than 1.5 s.
+ * Without METRICS_SALT nothing is written (there is no way to pseudonymize). Data older than METRICS_RETENTION_DAYS (90) is deleted about once a day.
+ */
+async function logMetrics(userId: string, m: RequestMeta, calls: { tmdb: number; gemini: number }): Promise<void> {
+  const salt = process.env.METRICS_SALT;
+  if (!salt || Date.now() < metricsDownUntil) return;
+  try {
+    const db = admin();
+    const user_hash = hashUser(userId, salt);
+    const writes: PromiseLike<{ error: unknown }>[] = [
+      db.from("rec_requests").insert({
+        id: m.requestId, session_id: m.sid, user_hash, page_no: m.pageNo, ms: m.ms, tmdb_calls: calls.tmdb, gemini_calls: calls.gemini,
+        gemini_rated: m.geminiRated, gemini_removed: m.geminiRemoved, candidates: m.candidates, buffer_after: m.bufferAfter,
+        genre_mix: m.genreMix, diversity: m.diversity, requested_genres: m.requested,
+      }),
+      db.from("rec_impressions").insert(m.impressions.map((i) => ({ request_id: m.requestId, session_id: m.sid, user_hash, ...i }))),
+    ];
+    if (Date.now() >= nextPurgeAt) {
+      nextPurgeAt = Date.now() + 24 * 3600_000;
+      const cutoff = new Date(Date.now() - (Number(process.env.METRICS_RETENTION_DAYS) || 90) * 86_400_000).toISOString();
+      writes.push(db.from("rec_impressions").delete().lt("created_at", cutoff), db.from("rec_requests").delete().lt("created_at", cutoff));
+    }
+    const res = await Promise.race([Promise.all(writes), new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))]);
+    if (!res || res.some((r) => r.error)) metricsDownUntil = Date.now() + 5 * 60_000;
+  } catch {
+    metricsDownUntil = Date.now() + 5 * 60_000;
+  }
+}
+
 async function search(
   a: Answers,
   g: Map<number, string>,
   resume: { cursor: Cursor; seen: number[] } | null,
   userKey: string | null | undefined,
   taste: Taste
-): Promise<{ movies: Movie[]; cursor: Cursor | null }> {
+): Promise<{ movies: Movie[]; cursor: Cursor | null; meta: RequestMeta }> {
   const cfg = rankConfig();
   const started = Date.now();
+  const pageNo = (resume?.cursor.pg ?? 0) + 1; // which page of this search is being built (1 = the first 20)
+  const sid = resume?.cursor.sid ?? randomUUID();
+  let bn = resume?.cursor.bn ?? 0; // batches fetched so far in this search
   // Never offered again: what was shown, and what the user disliked, liked, favorited or watched.
   const seen = new Set<number>([...(resume?.seen ?? []), ...taste.dislikes, ...taste.likes, ...taste.favorites, ...taste.watched]);
   let plan: Plan;
@@ -888,6 +980,10 @@ async function search(
     const unique = [...new Map(fresh.map((m) => [m.id, m])).values()];
     for (const m of unique) seen.add(m.id);
     const items = await hydrate(unique, g);
+    items.forEach((it, i) => {
+      it.o = bn * 100 + i; // the order TMDB gave it, for the metrics
+    });
+    bn++;
     for (const it of items) if (agree.has(it.movie.id)) it.b = agree.get(it.movie.id);
     pool.push(...items);
   }
@@ -905,7 +1001,8 @@ async function search(
   const done = next === null;
   return {
     movies: page.map((r) => r.item.movie),
-    cursor: done && !buf.length ? null : { pass: next?.pass ?? 0, page: next?.page ?? 1, plan, kw, sd: seedIds, buf, rej: rejected, done },
+    cursor: done && !buf.length ? null : { pass: next?.pass ?? 0, page: next?.page ?? 1, plan, kw, sd: seedIds, buf, rej: rejected, done, sid, pg: pageNo, bn },
+    meta: buildMeta(sid, pageNo, Date.now() - started, ranked.length, buf.length, gem.rejected.length, page, new Set([...ask.must, ...ask.any]), cfg.page),
   };
 }
 
@@ -937,16 +1034,13 @@ export async function POST(request: Request) {
     }
     const g = await genreMap();
     const cursor = body.mode === "more" ? cleanCursor(body.cursor) : null;
-    // A signed-in user with their own Gemini key uses it for the search refinement; everyone else uses the server key.
     // A signed-in user with their own Gemini key uses it for the search fine-tuning; everyone else uses the server key.
-    const userKey = await userGeminiKey(request);
-    const result = await search(
-      body.answers ?? {},
-      g,
-      cursor ? { cursor, seen: ints(body.seen, 1000) } : null,
-      userKey,
-      cleanTaste(body.taste)
+    const who = await userContext(request);
+    const calls = { tmdb: 0, gemini: 0 };
+    const result = await counters.run(calls, () =>
+      search(body.answers ?? {}, g, cursor ? { cursor, seen: ints(body.seen, 1000) } : null, who.geminiKey, cleanTaste(body.taste))
     );
+    if (who.userId && who.shareUsage) await logMetrics(who.userId, result.meta, calls); // only for signed-in users who share anonymous usage data
     return Response.json({ movies: result.movies, cursor: result.cursor });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });
