@@ -1,5 +1,5 @@
 // Vercel serverless function. API keys stay on the server (env vars).
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { admin, userContext } from "./_shared.js";
 import { genreConfig, toneTags, TONE_TAGS } from "./_genres.js";
@@ -824,6 +824,7 @@ async function applyGemini(
 /* ---------- Metrics: what was shown and how it was built (signed-in users only) ---------- */
 interface RequestMeta {
   requestId: string;
+  requested: number[]; // TMDB genre ids the search asked for
   sid: string;
   pageNo: number;
   ms: number;
@@ -852,7 +853,7 @@ function buildMeta(sid: string, pageNo: number, ms: number, candidates: number, 
     if (r.f.y) decades.add(Math.floor(r.f.y / 10));
   }
   return {
-    requestId: randomUUID(), sid, pageNo, ms, candidates, bufferAfter, geminiRated: page.filter((r) => r.item.gs !== undefined).length, geminiRemoved: removed,
+    requestId: randomUUID(), requested: [...requested], sid, pageNo, ms, candidates, bufferAfter, geminiRated: page.filter((r) => r.item.gs !== undefined).length, geminiRemoved: removed,
     genreMix: mix,
     diversity: { genres: allGenres.size, maxGenreShare: page.length ? Math.round((Math.max(0, ...perGenre.values()) / page.length) * 100) / 100 : 0, decades: decades.size },
     impressions: page.map((r, i) => ({
@@ -863,20 +864,35 @@ function buildMeta(sid: string, pageNo: number, ms: number, candidates: number, 
 }
 
 let metricsDownUntil = 0; // if the tables are missing or the database is slow, stop trying for a few minutes
-/** Writes the request and its impressions. Never fails or slows the search by more than 1.5 s. */
-async function logMetrics(userId: string, m: RequestMeta, calls: { tmdb: number; gemini: number }, answers: Answers): Promise<void> {
-  if (Date.now() < metricsDownUntil) return;
+let nextPurgeAt = 0;
+
+/** The user id never goes into the metric tables: only this keyed hash does (same value the database computes with rec_hash()). */
+const hashUser = (userId: string, salt: string): string => createHmac("sha256", salt).update(userId).digest("hex");
+
+/**
+ * Writes the request and its impressions for a user who agreed to share anonymous usage data. Never fails or slows the search by more than 1.5 s.
+ * Without METRICS_SALT nothing is written (there is no way to pseudonymize). Data older than METRICS_RETENTION_DAYS (90) is deleted about once a day.
+ */
+async function logMetrics(userId: string, m: RequestMeta, calls: { tmdb: number; gemini: number }): Promise<void> {
+  const salt = process.env.METRICS_SALT;
+  if (!salt || Date.now() < metricsDownUntil) return;
   try {
     const db = admin();
-    const write = Promise.all([
+    const user_hash = hashUser(userId, salt);
+    const writes: PromiseLike<{ error: unknown }>[] = [
       db.from("rec_requests").insert({
-        id: m.requestId, session_id: m.sid, user_id: userId, page_no: m.pageNo, ms: m.ms, tmdb_calls: calls.tmdb, gemini_calls: calls.gemini,
+        id: m.requestId, session_id: m.sid, user_hash, page_no: m.pageNo, ms: m.ms, tmdb_calls: calls.tmdb, gemini_calls: calls.gemini,
         gemini_rated: m.geminiRated, gemini_removed: m.geminiRemoved, candidates: m.candidates, buffer_after: m.bufferAfter,
-        genre_mix: m.genreMix, diversity: m.diversity, answers: m.pageNo === 1 ? answers : null,
+        genre_mix: m.genreMix, diversity: m.diversity, requested_genres: m.requested,
       }),
-      db.from("rec_impressions").insert(m.impressions.map((i) => ({ request_id: m.requestId, session_id: m.sid, user_id: userId, ...i }))),
-    ]);
-    const res = await Promise.race([write, new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))]);
+      db.from("rec_impressions").insert(m.impressions.map((i) => ({ request_id: m.requestId, session_id: m.sid, user_hash, ...i }))),
+    ];
+    if (Date.now() >= nextPurgeAt) {
+      nextPurgeAt = Date.now() + 24 * 3600_000;
+      const cutoff = new Date(Date.now() - (Number(process.env.METRICS_RETENTION_DAYS) || 90) * 86_400_000).toISOString();
+      writes.push(db.from("rec_impressions").delete().lt("created_at", cutoff), db.from("rec_requests").delete().lt("created_at", cutoff));
+    }
+    const res = await Promise.race([Promise.all(writes), new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))]);
     if (!res || res.some((r) => r.error)) metricsDownUntil = Date.now() + 5 * 60_000;
   } catch {
     metricsDownUntil = Date.now() + 5 * 60_000;
@@ -1024,7 +1040,7 @@ export async function POST(request: Request) {
     const result = await counters.run(calls, () =>
       search(body.answers ?? {}, g, cursor ? { cursor, seen: ints(body.seen, 1000) } : null, who.geminiKey, cleanTaste(body.taste))
     );
-    if (who.userId) await logMetrics(who.userId, result.meta, calls, body.answers ?? {}); // signed-in users only
+    if (who.userId && who.shareUsage) await logMetrics(who.userId, result.meta, calls); // only for signed-in users who share anonymous usage data
     return Response.json({ movies: result.movies, cursor: result.cursor });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Something went wrong" }, { status: 500 });

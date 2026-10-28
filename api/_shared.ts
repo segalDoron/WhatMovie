@@ -77,20 +77,28 @@ export async function userGeminiKey(request: Request): Promise<string | null> {
 }
 
 /** Who is asking (when signed in with a fresh session) and their own Gemini key (when saved). Never throws and never rejects a request. */
-export async function userContext(request: Request): Promise<{ userId: string | null; geminiKey: string | null }> {
+export async function userContext(request: Request): Promise<{ userId: string | null; geminiKey: string | null; shareUsage: boolean }> {
+  const none = { userId: null, geminiKey: null, shareUsage: false };
   try {
-    if (!request.headers.get("authorization")) return { userId: null, geminiKey: null };
+    if (!request.headers.get("authorization")) return none;
     const auth = await authenticate(request, { touch: false });
-    if (auth instanceof Response) return { userId: null, geminiKey: null };
+    if (auth instanceof Response) return none;
+    const db = admin();
+    const [key, pref] = await Promise.all([
+      db.from("user_settings").select("gemini_key_enc").eq("user_id", auth.user.id).maybeSingle(),
+      db.from("user_preferences").select("share_usage").eq("user_id", auth.user.id).maybeSingle(),
+    ]);
     let geminiKey: string | null = null;
     try {
-      const { data } = await admin().from("user_settings").select("gemini_key_enc").eq("user_id", auth.user.id).maybeSingle();
-      geminiKey = data ? decryptKey(data.gemini_key_enc, auth.user.id) : null;
+      geminiKey = key.data ? decryptKey(key.data.gemini_key_enc, auth.user.id) : null;
     } catch {
       geminiKey = null;
     }
-    return { userId: auth.user.id, geminiKey };
+    // The user's choice about sharing anonymous usage data. No saved choice = the default (METRICS_DEFAULT=off turns it off).
+    // If the choice cannot be read, nothing is collected.
+    const shareUsage = pref.error ? false : pref.data ? pref.data.share_usage === true : process.env.METRICS_DEFAULT !== "off";
+    return { userId: auth.user.id, geminiKey, shareUsage };
   } catch {
-    return { userId: null, geminiKey: null };
+    return none;
   }
 }
