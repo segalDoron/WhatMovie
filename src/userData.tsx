@@ -27,7 +27,7 @@ interface UserDataValue extends Data {
 }
 
 const EMPTY: Data = { favorites: [], votes: { like: [], dislike: [] }, searches: [], watched: [] };
-const MAX_SEARCHES = 5;
+const MAX_SEARCHES = 10;
 const LOCAL_PREFIX = "local-"; // searches not yet saved to the database
 const CACHE = { favorites: "mt:favorites", votes: "mt:votes", searches: "mt:searches", watched: "mt:watched" };
 const LEGACY_KEYS = ["usersInfo", "movie-tonight:favorites", "movie-tonight:searches", "vote"];

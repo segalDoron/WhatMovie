@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Movie } from "./types";
 import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play, Eye } from "./Icons";
-import { fetchCast, fetchTrailer, type CastMember } from "./api";
+import { fetchCast, fetchImages, fetchTrailer, type CastMember } from "./api";
 import { useUserData } from "./userData";
 import TrailerModal from "./TrailerModal";
+import HeroCarousel from "./HeroCarousel";
 import "./watched.css";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const [images, setImages] = useState<string[]>([]);
   const { votes, isFavorite, toggleFavorite, vote, isWatched, toggleWatched } = useUserData();
   const isFav = !!movie && isFavorite(movie.id);
   const watched = !!movie && isWatched(movie.id);
@@ -37,6 +39,10 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
     setCastState("loading");
     setTrailerKey(null);
     setTrailerOpen(false);
+    setImages([]);
+    fetchImages(movie.id)
+      .then((list) => live && setImages(list))
+      .catch(() => {});
     fetchCast(movie.id)
       .then((c) => live && (setCast(c), setCastState("done")))
       .catch(() => live && setCastState("error"));
@@ -54,6 +60,10 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const liked = !!movie && votes.like.some((m) => m.id === movie.id);
   const disliked = !!movie && votes.dislike.some((m) => m.id === movie.id);
   const t = tabbable ? 0 : -1;
+  // The main image first, then the other backdrops from TMDB (at most five in total).
+  const slides = movie
+    ? [...new Set([movie.backdrop ?? movie.poster, ...images].filter((u): u is string => !!u))].slice(0, 5)
+    : [];
 
   return (
     <>
@@ -67,7 +77,7 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
       </header>
       {movie && (
         <article className="detail">
-          {(movie.backdrop || movie.poster) && <img key={movie.id} className="hero" src={movie.backdrop ?? movie.poster!} alt="" />}
+          {slides.length > 0 && <HeroCarousel key={movie.id} slides={slides} tabIndex={t} />}
 
           <div className="actions">
             <div className="reactions" role="group" aria-label="Your reaction">

@@ -2,6 +2,7 @@ import type { Movie } from "./types";
 import { Chevron, Sort } from "./Icons";
 import MovieRow from "./MovieRow";
 import Reel from "./Reel";
+import { useUserData } from "./userData";
 
 interface Props {
   movies: Movie[];
@@ -18,6 +19,7 @@ interface Props {
 
 export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore, sorted, onToggleSort }: Props) {
   const t = tabbable ? 0 : -1;
+  const { isFavorite } = useUserData();
   return (
     <>
       <header className="bar">
@@ -37,7 +39,7 @@ export default function ResultsList({ movies, onOpen, onStartOver, tabbable, has
       ) : (
         <ul className="list">
           {movies.map((m) => (
-            <MovieRow key={m.id} movie={m} onOpen={() => onOpen(m)} tabIndex={t} />
+            <MovieRow key={m.id} movie={m} onOpen={() => onOpen(m)} favorite={isFavorite(m.id)} tabIndex={t} />
           ))}
         </ul>
       )}

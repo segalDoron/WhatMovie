@@ -10,7 +10,10 @@ import AccountModal from "./AccountModal";
 import { getKeyStatus } from "./settingsApi";
 import FavoritesContent from "./FavoritesContent";
 import HistoryContent from "./HistoryContent";
-import { Heart, ChevronRight, Clock, Close, User } from "./Icons";
+import WatchedContent from "./WatchedContent";
+import WatchlistTabs from "./WatchlistTabs";
+import { WATCHED_GOAL, watchedProgress, type WatchlistTab } from "./watchlist";
+import { Heart, ChevronRight, Clock, Close, Eye, User } from "./Icons";
 import { useAuth } from "./AuthProvider";
 import { useUserData, type Favorite, type SavedSearch } from "./userData";
 import { useMediaQuery } from "./useMediaQuery";
@@ -18,6 +21,7 @@ import { preloadImages } from "./preload";
 import { fetchMovies, fetchMore, fetchMovie, type Cursor, type Taste } from "./api";
 import type { Answers, Movie, View } from "./types";
 import "./styles-additions.css";
+import "./watchlist.css";
 
 type Theme = "light" | "dark";
 type NavState = {
@@ -31,8 +35,8 @@ const curIdx = () => (history.state as NavState | null)?.idx ?? 0;
 const pushNav = (s: Omit<NavState, "idx">) => history.pushState({ ...s, idx: curIdx() + 1 } as NavState, "");
 const replaceNav = (s: Omit<NavState, "idx">) => history.replaceState({ ...s, idx: curIdx() } as NavState, "");
 
-type Source = "results" | "favorites";
-type Panel = "favorites" | "history"; // what the bottom sheet (mobile) / side drawer (desktop) is showing
+type Source = "results" | "favorites" | "watched";
+type Panel = WatchlistTab; // what the bottom sheet (mobile) / side drawer (desktop) is showing
 
 // `inert` removes a hidden layer from tab order and screen readers.
 const inertProps = (on: boolean): Record<string, string> => (on ? { inert: "" } : {});
@@ -203,7 +207,7 @@ export default function App() {
 
   const submit: React.ComponentProps<typeof QuestionForm>["onSubmit"] = async (answers) => {
     const id = ++requestId.current;
-    addSearch(answers); // keeps the last 5 searches
+    addSearch(answers); // keeps the last 10 searches
     pushNav({ view: "loading" });
     setView("loading");
     try {
@@ -276,7 +280,7 @@ export default function App() {
   const sourceOf = (m: Movie): Source => detailSource.current.get(m.id) ?? "results";
   // What the list shows, in order. "Next movie" follows the same order.
   const shownMovies = useMemo(() => (sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies), [movies, sortByRating]);
-  const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : shownMovies);
+  const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : src === "watched" ? watched : shownMovies);
   const nextId = (() => {
     if (!selected) return null;
     const list = listOf(sourceOf(selected));
@@ -305,14 +309,14 @@ export default function App() {
   const closePanel = () => setPanel(null);
 
   // A favorite only stores the basics, so fetch the full details from TMDB first (with a loader).
-  const openFavorite = async (fav: Favorite) => {
+  const openSaved = async (fav: Favorite, source: "favorites" | "watched") => {
     const id = ++favRequest.current;
     setFavLoading(true);
     setFavError("");
     try {
       const m = movieCache.current.get(fav.id) ?? (await fetchMovie(fav.id));
       if (id !== favRequest.current) return; // sheet / drawer action was cancelled meanwhile
-      await openDetail(m, "favorites", { silent: true }); // also waits for the image; the sheet / drawer stays open underneath
+      await openDetail(m, source, { silent: true }); // also waits for the image; the sheet / drawer stays open underneath
       if (id === favRequest.current) setFavLoading(false);
     } catch {
       if (id !== favRequest.current) return;
@@ -322,13 +326,19 @@ export default function App() {
   };
 
   const shownPanel = panel ?? lastPanel.current;
-  const panelLabel = shownPanel === "history" ? "Recent searches" : "Favorites";
-  const panelBody =
-    shownPanel === "history" ? (
-      <HistoryContent items={searches} onClose={closePanel} onPick={rerun} onRemove={removeSearch} />
-    ) : (
-      <FavoritesContent items={favorites} loading={favLoading} error={favError} onClose={closePanel} onPick={openFavorite} />
-    );
+  const panelLabel = shownPanel === "history" ? "Recent searches" : shownPanel === "watched" ? "Watched" : "Favorites";
+  const panelBody = (
+    <div className="watch-panel">
+      <WatchlistTabs value={shownPanel} onChange={setPanel} />
+      {shownPanel === "history" ? (
+        <HistoryContent items={searches} onClose={closePanel} onPick={rerun} onRemove={removeSearch} />
+      ) : shownPanel === "watched" ? (
+        <WatchedContent items={watched} loading={favLoading} error={favError} onClose={closePanel} onPick={(m) => openSaved(m, "watched")} />
+      ) : (
+        <FavoritesContent items={favorites} loading={favLoading} error={favError} onClose={closePanel} onPick={(m) => openSaved(m, "favorites")} />
+      )}
+    </div>
+  );
 
   return (
     <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
@@ -359,6 +369,15 @@ export default function App() {
               >
                 <Heart filled={panel === "favorites" || favorites.length > 0} />
                 {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
+              </button>
+              <button
+                className="watched-top"
+                onClick={() => togglePanel("watched")}
+                aria-pressed={panel === "watched"}
+                aria-label={`${panel === "watched" ? "Close" : "Open"} watched (${watched.length})`}
+              >
+                <Eye />
+                {watched.length > 0 && <span className="badge" aria-hidden="true">{watched.length}</span>}
               </button>
             </>
           )}
@@ -444,6 +463,27 @@ export default function App() {
             >
               <Heart filled={favorites.length > 0} />
               {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
+            </button>
+            <button
+              type="button"
+              className="menu-btn watch-btn"
+              onClick={() => togglePanel("watched")}
+              disabled={view === "loading"}
+              aria-expanded={panel === "watched"}
+              aria-label={`Watched (${watched.length} of ${WATCHED_GOAL})`}
+            >
+              <svg className="watch-ring" viewBox="0 0 40 40" aria-hidden="true">
+                <circle className="ring-track" cx="20" cy="20" r="17" />
+                <circle
+                  className="ring-fill"
+                  cx="20"
+                  cy="20"
+                  r="17"
+                  pathLength={100}
+                  strokeDasharray={`${Math.round(watchedProgress(watched.length) * 100)} 100`}
+                />
+              </svg>
+              <Eye />
             </button>
             <button type="button" className="menu-btn" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
               {profileFace}
