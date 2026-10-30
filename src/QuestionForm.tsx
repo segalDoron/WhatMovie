@@ -1,16 +1,15 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useState } from "react";
 import { CORE, MORE, type Question } from "./options";
 import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
 import YearRange, { DEFAULT_FROM_YEAR, MIN_YEAR, MAX_YEAR } from "./YearRange";
 import ThisOrThat, { type Side } from "./ThisOrThat";
 import type { Answers } from "./types";
-import "./page-head.css";
 
 interface Props {
   onSubmit: (answers: Answers) => void;
 }
 
-export default function QuestionForm({ onSubmit, headerActions }: Props & { headerActions?: ReactNode }) {
+export default function QuestionForm({ onSubmit }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
   const [years, setYears] = useState<[number, number]>([DEFAULT_FROM_YEAR, MAX_YEAR]);
   const [picks, setPicks] = useState<Record<string, Side>>({});
@@ -78,10 +77,7 @@ export default function QuestionForm({ onSubmit, headerActions }: Props & { head
         onSubmit(buildAnswers());
       }}
     >
-      <div className="page-head">
-        <h1>What are we watching tonight?</h1>
-        {headerActions && <div className="icons">{headerActions}</div>}
-      </div>
+      <h1>What are we watching tonight?</h1>
 
       {CORE.map((q) => (
         <Fragment key={q.key}>

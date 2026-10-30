@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Movie } from "./types";
 import { Chevron, Star, ThumbUp, ThumbDown, Heart, Play, Eye } from "./Icons";
-import { fetchCast, fetchImages, fetchTrailer, type CastMember, type SlideImage } from "./api";
+import { fetchCast, fetchImages, fetchTrailer, type CastMember } from "./api";
 import { useUserData } from "./userData";
 import TrailerModal from "./TrailerModal";
 import HeroCarousel from "./HeroCarousel";
@@ -27,7 +27,7 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const [castState, setCastState] = useState<"loading" | "done" | "error">("loading");
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const [images, setImages] = useState<SlideImage[]>([]);
+  const [images, setImages] = useState<string[]>([]);
   const { votes, isFavorite, toggleFavorite, vote, isWatched, toggleWatched } = useUserData();
   const isFav = !!movie && isFavorite(movie.id);
   const watched = !!movie && isWatched(movie.id);
@@ -60,9 +60,10 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const liked = !!movie && votes.like.some((m) => m.id === movie.id);
   const disliked = !!movie && votes.dislike.some((m) => m.id === movie.id);
   const t = tabbable ? 0 : -1;
-  // Carousel: free-licensed images (with credit) from the server; until they arrive, the main image.
-  const mainImage = movie?.backdrop ?? movie?.poster ?? null;
-  const slides: SlideImage[] = images.length ? images : mainImage ? [{ url: mainImage }] : [];
+  // The main image first, then the other backdrops from TMDB (at most five in total).
+  const slides = movie
+    ? [...new Set([movie.backdrop ?? movie.poster, ...images].filter((u): u is string => !!u))].slice(0, 5)
+    : [];
 
   return (
     <>

@@ -1,23 +1,21 @@
 import { useState } from "react";
 import { Chevron, ChevronRight } from "./Icons";
-import type { SlideImage } from "./api";
 import "./hero-carousel.css";
 
 interface Props {
-  slides: SlideImage[]; // up to five images
+  slides: string[]; // up to five image URLs; the first one is the main image
   tabIndex?: number;
 }
 
-/** Manual carousel for the details page: arrows and dots, no autoplay. Shows the credit for licensed images. */
+/** Manual carousel for the details page: arrows and dots, no autoplay. */
 export default function HeroCarousel({ slides, tabIndex }: Props) {
   const [index, setIndex] = useState(0);
   const count = slides.length;
   const cur = Math.min(index, count - 1);
-  const slide = slides[cur];
 
   return (
     <div className="hero-carousel">
-      <img className="hero" src={slide.url} alt="" />
+      <img className="hero" src={slides[cur]} alt="" />
       {count > 1 && (
         <>
           <button
@@ -52,15 +50,6 @@ export default function HeroCarousel({ slides, tabIndex }: Props) {
             ))}
           </div>
         </>
-      )}
-      {slide.credit && (
-        <p className="hero-credit">
-          {slide.creditUrl ? (
-            <a href={slide.creditUrl} target="_blank" rel="noopener noreferrer" tabIndex={tabIndex}>{slide.credit}</a>
-          ) : (
-            slide.credit
-          )}
-        </p>
       )}
     </div>
   );

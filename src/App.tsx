@@ -342,52 +342,47 @@ export default function App() {
     </div>
   );
 
-  const themeBtn = (
-    <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
-                {theme === "dark" ? "☀️" : "🌙"}
-              </button>
-  );
-  const desktopIcons = (
-    <>
-          <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
-            {profileFace}
-          </button>
-          <button
-            className="hist-top"
-            onClick={() => togglePanel("history")}
-            aria-pressed={panel === "history"}
-            aria-label={panel === "history" ? "Close recent searches" : "Open recent searches"}
-          >
-            <Clock />
-          </button>
-          <button
-            className="fav-top"
-            onClick={() => togglePanel("favorites")}
-            aria-pressed={panel === "favorites"}
-            aria-label={`${panel === "favorites" ? "Close" : "Open"} favorites (${favorites.length})`}
-          >
-            <Heart filled={panel === "favorites" || favorites.length > 0} />
-            {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
-          </button>
-          <button
-            className="watched-top"
-            onClick={() => togglePanel("watched")}
-            aria-pressed={panel === "watched"}
-            aria-label={`${panel === "watched" ? "Close" : "Open"} watched (${watched.length})`}
-          >
-            <Eye />
-            {watched.length > 0 && <span className="badge" aria-hidden="true">{watched.length}</span>}
-          </button>
-    </>
-  );
-
   return (
     <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
       <div className="main">
         <div className="viewport">
-          {!(isDesktop && view === "form") && themeBtn}
+          <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
 
-          {isDesktop && view !== "form" && desktopIcons}
+          {isDesktop && view !== "form" && (
+            <>
+              <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
+                {profileFace}
+              </button>
+              <button
+                className="hist-top"
+                onClick={() => togglePanel("history")}
+                aria-pressed={panel === "history"}
+                aria-label={panel === "history" ? "Close recent searches" : "Open recent searches"}
+              >
+                <Clock />
+              </button>
+              <button
+                className="fav-top"
+                onClick={() => togglePanel("favorites")}
+                aria-pressed={panel === "favorites"}
+                aria-label={`${panel === "favorites" ? "Close" : "Open"} favorites (${favorites.length})`}
+              >
+                <Heart filled={panel === "favorites" || favorites.length > 0} />
+                {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
+              </button>
+              <button
+                className="watched-top"
+                onClick={() => togglePanel("watched")}
+                aria-pressed={panel === "watched"}
+                aria-label={`${panel === "watched" ? "Close" : "Open"} watched (${watched.length})`}
+              >
+                <Eye />
+                {watched.length > 0 && <span className="badge" aria-hidden="true">{watched.length}</span>}
+              </button>
+            </>
+          )}
 
           {detailOpen && (
             <button className="next-top" onClick={goNext} disabled={nextId === null} aria-label="Next movie">
@@ -397,7 +392,7 @@ export default function App() {
 
           {view === "form" && (
             <div className="layer" {...inertProps(detailOpen)}>
-              <QuestionForm onSubmit={submit} headerActions={isDesktop ? <>{themeBtn}{desktopIcons}</> : undefined} />
+              <QuestionForm onSubmit={submit} />
             </div>
           )}
           {view === "loading" && <Loading />}
