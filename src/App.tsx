@@ -350,7 +350,7 @@ export default function App() {
             {theme === "dark" ? "☀️" : "🌙"}
           </button>
 
-          {isDesktop && view !== "form" && (
+          {isDesktop && (
             <>
               <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
                 {profileFace}
