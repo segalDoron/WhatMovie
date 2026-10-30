@@ -20,6 +20,115 @@ interface Movie {
 // Counters for the request being served (TMDB and Gemini calls), for the metrics.
 const counters = new AsyncLocalStorage<{ tmdb: number; gemini: number }>();
 
+/* ---------- Details-page images: free, licensed sources first ---------- */
+
+export interface SlideImage { url: string; credit?: string; creditUrl?: string }
+
+const imagesCache = new Map<number, { at: number; images: SlideImage[] }>();
+const IMAGES_TTL = 24 * 60 * 60 * 1000;
+const WEB_TIMEOUT = 3000; // keep well inside the 10 s serverless limit
+const MIN_WIDTH = 800;
+
+const stripTags = (t: string) => t.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
+/** Openverse: CC0 / public domain / CC BY / CC BY-SA images only (license_type=commercial,modification). */
+async function openverseImages(title: string): Promise<SlideImage[]> {
+  const url = new URL("https://api.openverse.org/v1/images/");
+  url.searchParams.set("q", `${title} film`);
+  url.searchParams.set("license_type", "commercial,modification");
+  url.searchParams.set("page_size", "10");
+  url.searchParams.set("mature", "false");
+  const res = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(WEB_TIMEOUT) });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    results?: { url: string; width?: number; creator?: string; license: string; foreign_landing_url?: string }[];
+  };
+  return (data.results ?? [])
+    .filter((r) => r.url && (r.width ?? 0) >= MIN_WIDTH)
+    .map((r) => {
+      const lic = r.license.toLowerCase();
+      const licName = lic === "cc0" ? "CC0" : lic === "pdm" ? "Public domain" : `CC ${lic.toUpperCase()}`;
+      return {
+        url: r.url,
+        credit: [r.creator && `Photo: ${r.creator}`, licName, "via Openverse"].filter(Boolean).join(" · "),
+        creditUrl: r.foreign_landing_url,
+      };
+    });
+}
+
+/** Wikimedia Commons: keep only files whose license is public domain or a CC license. */
+async function commonsImages(title: string, year: string): Promise<SlideImage[]> {
+  const url = new URL("https://commons.wikimedia.org/w/api.php");
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", `${title} ${year} film filetype:bitmap`.trim());
+  url.searchParams.set("gsrnamespace", "6");
+  url.searchParams.set("gsrlimit", "10");
+  url.searchParams.set("prop", "imageinfo");
+  url.searchParams.set("iiprop", "url|extmetadata|size");
+  url.searchParams.set("iiurlwidth", "780");
+  url.searchParams.set("format", "json");
+  const res = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(WEB_TIMEOUT) });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    query?: {
+      pages?: Record<string, {
+        imageinfo?: { thumburl?: string; width?: number; descriptionurl?: string;
+          extmetadata?: Record<string, { value: string } | undefined> }[];
+      }>;
+    };
+  };
+  const out: SlideImage[] = [];
+  for (const page of Object.values(data.query?.pages ?? {})) {
+    const info = page.imageinfo?.[0];
+    if (!info?.thumburl || (info.width ?? 0) < MIN_WIDTH) continue;
+    const licName = stripTags(info.extmetadata?.LicenseShortName?.value ?? "");
+    if (!/^(CC\b|Public domain|PD\b)/i.test(licName)) continue; // fair use / all rights reserved: skipped
+    const artist = stripTags(info.extmetadata?.Artist?.value ?? "");
+    out.push({
+      url: info.thumburl,
+      credit: [artist && `Photo: ${artist}`, licName, "via Wikimedia Commons"].filter(Boolean).join(" · "),
+      creditUrl: info.descriptionurl,
+    });
+  }
+  return out;
+}
+
+const safe = async (f: () => Promise<SlideImage[]>): Promise<SlideImage[]> => {
+  try { return await f(); } catch { return []; }
+};
+
+/** Up to five images: Openverse, then Wikimedia Commons, then TMDB backdrops spread over languages. */
+async function detailImages(id: number): Promise<SlideImage[]> {
+  const hit = imagesCache.get(id);
+  if (hit && Date.now() - hit.at < IMAGES_TTL) return hit.images;
+
+  const meta = await tmdb<{ title: string; release_date?: string }>(`/movie/${id}`);
+  const year = (meta.release_date ?? "").slice(0, 4);
+  const out: SlideImage[] = [];
+  const seen = new Set<string>();
+  const add = (list: SlideImage[]) => {
+    for (const img of list) if (out.length < 5 && !seen.has(img.url)) { seen.add(img.url); out.push(img); }
+  };
+
+  add(await safe(() => openverseImages(meta.title)));
+  if (out.length < 5) add(await safe(() => commonsImages(meta.title, year)));
+  if (out.length < 5) {
+    const r = await tmdb<{ backdrops: { file_path: string; vote_average?: number; iso_639_1?: string | null }[] }>(
+      `/movie/${id}/images`,
+      { include_image_language: "en,null" }
+    );
+    const ranked = [...r.backdrops].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0));
+    // Diversity: one backdrop per image language first, then the best of the rest.
+    const firstOfLang = ranked.filter((b, i) => ranked.findIndex((x) => (x.iso_639_1 ?? "") === (b.iso_639_1 ?? "")) === i);
+    const ordered = [...firstOfLang, ...ranked.filter((b) => !firstOfLang.includes(b))];
+    add(ordered.map((b) => ({ url: `${IMG}/w780${b.file_path}` })));
+  }
+
+  imagesCache.set(id, { at: Date.now(), images: out });
+  return out;
+}
+
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
   const c = counters.getStore();
   if (c) c.tmdb++;
@@ -1047,16 +1156,7 @@ export async function POST(request: Request) {
     if (body.mode === "images") {
       const id = Number(body.id);
       if (!Number.isInteger(id)) throw new Error("Invalid movie id");
-      const r = await tmdb<{ backdrops: { file_path: string; vote_average?: number; vote_count?: number }[] }>(
-        `/movie/${id}/images`,
-        { include_image_language: "en,null" }
-      );
-      // The best-rated backdrops first; the page shows at most five.
-      const images = [...r.backdrops]
-        .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0))
-        .slice(0, 5)
-        .map((b) => `${IMG}/w780${b.file_path}`);
-      return Response.json({ images });
+      return Response.json({ images: await detailImages(id) });
     }
     if (body.mode === "movie") {
       const id = Number(body.id);

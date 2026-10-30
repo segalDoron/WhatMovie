@@ -75,9 +75,10 @@ export async function fetchMovie(id: number): Promise<MovieDetails> {
 const trailerCache = new Map<number, string | null>();
 
 /** YouTube key of the best trailer for a movie, or null when none exists. */
-const imagesCache = new Map<number, string[]>();
+export interface SlideImage { url: string; credit?: string; creditUrl?: string }
+const imagesCache = new Map<number, SlideImage[]>();
 /** Up to five backdrop images for the details page carousel. */
-export async function fetchImages(id: number): Promise<string[]> {
+export async function fetchImages(id: number): Promise<SlideImage[]> {
   const hit = imagesCache.get(id);
   if (hit) return hit;
   const res = await fetch("/api/movies", {
@@ -87,7 +88,7 @@ export async function fetchImages(id: number): Promise<string[]> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? "Could not load images");
-  const images: string[] = Array.isArray(data.images) ? data.images : [];
+  const images: SlideImage[] = Array.isArray(data.images) ? data.images : [];
   imagesCache.set(id, images);
   return images;
 }

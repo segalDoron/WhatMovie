@@ -93,7 +93,7 @@ export default function App() {
       live = false;
     };
   }, [userId, ackSignIn]);
-  const { favorites, votes, watched, searches, addSearch, removeSearch, syncError, dismissSyncError } = useUserData();
+  const { favorites, votes, watched, searches, addSearch, removeSearch, syncError, dismissSyncError, isDisliked } = useUserData();
   // The latest taste, read at the moment a search or "show more" is sent (newest first).
   const tasteRef = useRef<Taste>({ favorites: [], likes: [], dislikes: [], watched: [] });
   tasteRef.current = {
@@ -279,7 +279,9 @@ export default function App() {
   // The movie after the current one in the list it was opened from.
   const sourceOf = (m: Movie): Source => detailSource.current.get(m.id) ?? "results";
   // What the list shows, in order. "Next movie" follows the same order.
-  const shownMovies = useMemo(() => (sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies), [movies, sortByRating]);
+  // Disliked movies go to the end of the list (the sort choice still applies inside each group).
+  const orderedMovies = sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies;
+  const shownMovies = [...orderedMovies.filter((m) => !isDisliked(m.id)), ...orderedMovies.filter((m) => isDisliked(m.id))];
   const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : src === "watched" ? watched : shownMovies);
   const nextId = (() => {
     if (!selected) return null;
@@ -340,47 +342,52 @@ export default function App() {
     </div>
   );
 
+  const themeBtn = (
+    <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+                {theme === "dark" ? "☀️" : "🌙"}
+              </button>
+  );
+  const desktopIcons = (
+    <>
+          <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
+            {profileFace}
+          </button>
+          <button
+            className="hist-top"
+            onClick={() => togglePanel("history")}
+            aria-pressed={panel === "history"}
+            aria-label={panel === "history" ? "Close recent searches" : "Open recent searches"}
+          >
+            <Clock />
+          </button>
+          <button
+            className="fav-top"
+            onClick={() => togglePanel("favorites")}
+            aria-pressed={panel === "favorites"}
+            aria-label={`${panel === "favorites" ? "Close" : "Open"} favorites (${favorites.length})`}
+          >
+            <Heart filled={panel === "favorites" || favorites.length > 0} />
+            {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
+          </button>
+          <button
+            className="watched-top"
+            onClick={() => togglePanel("watched")}
+            aria-pressed={panel === "watched"}
+            aria-label={`${panel === "watched" ? "Close" : "Open"} watched (${watched.length})`}
+          >
+            <Eye />
+            {watched.length > 0 && <span className="badge" aria-hidden="true">{watched.length}</span>}
+          </button>
+    </>
+  );
+
   return (
     <div className={`app ${drawerShown ? "drawer-open" : ""}`} {...inertProps(loginOpen || accountOpen)}>
       <div className="main">
         <div className="viewport">
-          <button className="theme" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
+          {!(isDesktop && view === "form") && themeBtn}
 
-          {isDesktop && (
-            <>
-              <button className="profile-top" onClick={onAccount} aria-haspopup="dialog" aria-label={profileLabel}>
-                {profileFace}
-              </button>
-              <button
-                className="hist-top"
-                onClick={() => togglePanel("history")}
-                aria-pressed={panel === "history"}
-                aria-label={panel === "history" ? "Close recent searches" : "Open recent searches"}
-              >
-                <Clock />
-              </button>
-              <button
-                className="fav-top"
-                onClick={() => togglePanel("favorites")}
-                aria-pressed={panel === "favorites"}
-                aria-label={`${panel === "favorites" ? "Close" : "Open"} favorites (${favorites.length})`}
-              >
-                <Heart filled={panel === "favorites" || favorites.length > 0} />
-                {favorites.length > 0 && <span className="badge" aria-hidden="true">{favorites.length}</span>}
-              </button>
-              <button
-                className="watched-top"
-                onClick={() => togglePanel("watched")}
-                aria-pressed={panel === "watched"}
-                aria-label={`${panel === "watched" ? "Close" : "Open"} watched (${watched.length})`}
-              >
-                <Eye />
-                {watched.length > 0 && <span className="badge" aria-hidden="true">{watched.length}</span>}
-              </button>
-            </>
-          )}
+          {isDesktop && view !== "form" && desktopIcons}
 
           {detailOpen && (
             <button className="next-top" onClick={goNext} disabled={nextId === null} aria-label="Next movie">
@@ -390,7 +397,7 @@ export default function App() {
 
           {view === "form" && (
             <div className="layer" {...inertProps(detailOpen)}>
-              <QuestionForm onSubmit={submit} />
+              <QuestionForm onSubmit={submit} headerActions={isDesktop ? <>{themeBtn}{desktopIcons}</> : undefined} />
             </div>
           )}
           {view === "loading" && <Loading />}

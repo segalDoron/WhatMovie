@@ -16,6 +16,7 @@ interface MovieDbRow { movie_id: number; title: string; genres: string[]; year: 
 interface UserDataValue extends Data {
   isFavorite: (id: number) => boolean;
   isWatched: (id: number) => boolean;
+  isDisliked: (id: number) => boolean;
   toggleWatched: (m: Favorite) => void;
   toggleFavorite: (m: Favorite) => void;
   removeFavorite: (id: number) => void;
@@ -234,6 +235,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const isFavorite = (id: number) => data.favorites.some((f) => f.id === id);
 
   const isWatched = (id: number) => data.watched.some((m) => m.id === id);
+  const isDisliked = (id: number) => data.votes.dislike.some((m) => m.id === id);
 
   // "Watched" movies are not recommended again.
   const toggleWatched = (m: Favorite) => {
@@ -312,6 +314,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     ...data,
     isFavorite,
     isWatched,
+    isDisliked,
     toggleWatched,
     toggleFavorite,
     removeFavorite,
