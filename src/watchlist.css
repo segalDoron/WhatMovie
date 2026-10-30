@@ -1,0 +1,43 @@
+/* ---------- Watchlist: tabs, watched progress, desktop watched icon, mobile menu ring ---------- */
+
+/* Sheet / drawer body: tabs, then the active list. */
+.watch-panel { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.watch-tabs { flex: none; display: flex; gap: 6px; padding: 8px 16px 4px 20px; }
+.watch-tabs button {
+  flex: 1; height: 36px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); font: inherit; font-weight: 700; font-size: .9rem; cursor: pointer;
+}
+.watch-tabs button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* Watched progress */
+.watch-progress { display: flex; flex-direction: column; gap: 8px; padding: 4px 16px 12px 20px; }
+.watch-progress-text { display: flex; justify-content: space-between; font-weight: 700; font-size: .95rem; color: var(--muted); }
+.watch-bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.watch-bar span { display: block; height: 100%; border-radius: inherit; background: var(--sun); transition: width .4s; }
+.watch-empty-icon { display: grid; place-items: center; color: var(--sun); }
+.watch-empty-icon svg { width: 56px; height: 56px; }
+
+/* Mobile menu: progress ring around the watched icon */
+.menu-btn .watch-ring {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+  transform: rotate(-90deg); pointer-events: none;
+}
+.watch-ring .ring-track { fill: none; stroke: var(--line); stroke-width: 3; }
+.watch-ring .ring-fill { fill: none; stroke: var(--sun); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .4s; }
+
+/* Desktop: watched icon in the top bar, left of recent searches */
+.watched-top {
+  position: absolute; top: 12px; right: calc(max(0px, (100% - var(--col)) / 2) + 216px); z-index: 30;
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface);
+  display: grid; place-items: center; color: var(--accent);
+  transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s;
+}
+.watched-top[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.watched-top .badge { top: -5px; right: -5px; }
+.app.drawer-open .watched-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 216px), 588px); }
+
+/* The details page's "next" button moves one step left to make room for the watched icon. */
+@media (min-width: 768px) {
+  .app .viewport .next-top { right: calc(max(0px, (100% - var(--col)) / 2) + 264px); }
+}
+.app.drawer-open .viewport .next-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 264px), 636px); }

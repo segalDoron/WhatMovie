@@ -338,7 +338,7 @@ async function geminiPlan(a: Answers, genres: Map<number, string>, explicit: boo
     '- "excludeGenres" lists genres that clash with the requested mood.',
     "- Never include Animation unless the user asked for animation, anime or kids, or kids are watching.",
     '- "keywords": at most 3 short TMDB keywords for a specific theme the user clearly implied (for example "twist ending", "slasher"), otherwise [].',
-    "- Form keys: who (solo, partner, friends, kids), mood, genres (kids = family friendly, anime = Japanese animation), time, novelty, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
+    "- Form keys: who (solo, partner, friends, kids), mood, genres (kids = family friendly, anime = Japanese animation), time, energy, taste (picks such as laugh, tense, think, feel, shocking, slow, gem, classic), loved (a movie they like), actor.",
   ].join("\n");
 
   const raw = (await geminiJson(system, JSON.stringify(a), userKey)) as Record<string, unknown> | null;
@@ -460,7 +460,6 @@ function baseParams(a: Answers, plan: Plan): Params {
   }
   if (a.time === "short") p["with_runtime.lte"] = 90;
   if (a.time === "medium") { p["with_runtime.gte"] = 85; p["with_runtime.lte"] = 130; }
-  if (a.novelty === "familiar") { p.sort_by = "vote_average.desc"; p["vote_count.gte"] = 5000; }
   if (taste.includes("gem")) { p["vote_count.gte"] = 300; p["vote_count.lte"] = 4000; p["vote_average.gte"] = 7; p.sort_by = "vote_average.desc"; }
   if (taste.includes("classic")) { p["vote_count.gte"] = 8000; p.sort_by = "vote_average.desc"; }
 
@@ -583,7 +582,7 @@ const parseSeed = (q: string) => {
   return m ? { title: m[1], year: m[2] } : { title: q };
 };
 
-async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<{ seeds: TmdbMovie[]; candidates: TmdbMovie[]; agree: Map<number, number> }> {
+async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<{ seeds: TmdbMovie[]; candidates: TmdbMovie[]; agree: Map<number, number>; loved: TmdbMovie | null }> {
   const found = await Promise.all(
     seeds.slice(0, 12).map(async (q) => {
       const { title, year } = parseSeed(q);
@@ -592,7 +591,9 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<{ see
     })
   );
   const seedMovies = found.filter(Boolean);
-  if (!seedMovies.length) return { seeds: [], candidates: [], agree: new Map() };
+  const lovedQ = String(a.loved ?? "").trim();
+  const loved = lovedQ && seeds[0] === lovedQ ? found[0] ?? null : null; // the "loved" movie is always the first seed
+  if (!seedMovies.length) return { seeds: [], candidates: [], agree: new Map(), loved: null };
   const seedIds = new Set(seedMovies.map((m) => m.id));
 
   const lists = await Promise.all(
@@ -622,10 +623,10 @@ async function fromSeeds(seeds: string[], a: Answers, plan: Plan): Promise<{ see
     return !((from && y && y < from) || (to && y && y > to));
   };
   const strict = ranked.filter((m) => inYears(m) && isValid(m, plan));
-  if (strict.length >= 8) return { seeds: seedMovies, candidates: strict.slice(0, 30), agree };
+  if (strict.length >= 8) return { seeds: seedMovies, candidates: strict.slice(0, 30), agree, loved };
   // Too few: keep only the always-on rules (no cartoons, documentaries or skipped genres).
   const always = { ...plan, mustHave: [], anyOf: [], exclude: globalExclude(a) };
-  return { seeds: seedMovies, candidates: ranked.filter((m) => inYears(m) && isValid(m, always)).slice(0, 30), agree };
+  return { seeds: seedMovies, candidates: ranked.filter((m) => inYears(m) && isValid(m, always)).slice(0, 30), agree, loved };
 }
 
 /* Cursors come back from the browser, so check them before use. */
@@ -698,7 +699,6 @@ const WORDS: Record<string, Record<string, string>> = {
   who: { solo: "watching alone", partner: "watching with a partner", friends: "watching with friends", kids: "a family with kids" },
   mood: { laugh: "wants to laugh", thrilled: "wants to be thrilled", moved: "wants to be moved", mindbent: "wants something mind-bending", comforted: "wants comfort", twists: "wants major plot twists", mystery: "wants a mystery" },
   time: { short: "under 90 minutes", medium: "about 2 hours" },
-  novelty: { new: "something new", familiar: "a comfort rewatch" },
   energy: { light: "easy and light", focus: "needs full attention" },
 };
 const GENRE_WORDS: Record<string, string> = { crazynight: "one crazy night", scifi: "sci-fi", kids: "kids / family friendly", anime: "anime" };
@@ -706,7 +706,7 @@ const GENRE_WORDS: Record<string, string> = { crazynight: "one crazy night", sci
 /** The search form as a sentence Gemini can read. */
 function describeAnswers(a: Answers): string {
   const parts: string[] = [];
-  for (const k of ["who", "mood", "time", "novelty", "energy"]) {
+  for (const k of ["who", "mood", "time", "energy"]) {
     const w = WORDS[k][String(a[k])];
     if (w) parts.push(w);
   }
@@ -863,6 +863,14 @@ function buildMeta(sid: string, pageNo: number, ms: number, candidates: number, 
   };
 }
 
+const warned = new Set<string>();
+/** Logs a configuration problem once per server instance (visible in the Vercel logs). */
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.error("metrics: " + message);
+}
+
 let metricsDownUntil = 0; // if the tables are missing or the database is slow, stop trying for a few minutes
 let nextPurgeAt = 0;
 
@@ -875,7 +883,8 @@ const hashUser = (userId: string, salt: string): string => createHmac("sha256", 
  */
 async function logMetrics(userId: string, m: RequestMeta, calls: { tmdb: number; gemini: number }): Promise<void> {
   const salt = process.env.METRICS_SALT;
-  if (!salt || Date.now() < metricsDownUntil) return;
+  if (!salt) return warnOnce("METRICS_SALT is not set in the environment, so nothing is collected");
+  if (Date.now() < metricsDownUntil) return;
   try {
     const db = admin();
     const user_hash = hashUser(userId, salt);
@@ -893,8 +902,11 @@ async function logMetrics(userId: string, m: RequestMeta, calls: { tmdb: number;
       writes.push(db.from("rec_impressions").delete().lt("created_at", cutoff), db.from("rec_requests").delete().lt("created_at", cutoff));
     }
     const res = await Promise.race([Promise.all(writes), new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))]);
+    if (!res) console.error("metrics: the database did not answer within 1.5 s; pausing for 5 minutes");
+    else for (const r of res) if (r.error) console.error("metrics: write failed:", (r.error as { message?: string }).message ?? "unknown error"); // never the data itself
     if (!res || res.some((r) => r.error)) metricsDownUntil = Date.now() + 5 * 60_000;
-  } catch {
+  } catch (e) {
+    console.error("metrics: write failed:", e instanceof Error ? e.message : "unknown error");
     metricsDownUntil = Date.now() + 5 * 60_000;
   }
 }
@@ -919,6 +931,7 @@ async function search(
   let seedIds: number[] = [];
   let seedCandidates: TmdbMovie[] = [];
   let agree = new Map<number, number>();
+  let lovedMovie: TmdbMovie | null = null; // the movie the user typed as "loved": always shown on the first page
   let pool: Item[] = [];
   let rejected: number[] = []; // movies Gemini removed as clear misfits: never offered again
 
@@ -942,7 +955,8 @@ async function search(
       seedIds = r.seeds.map((m) => m.id);
       seedCandidates = r.candidates;
       agree = r.agree;
-      for (const id of seedIds) seen.add(id);
+      lovedMovie = r.loved;
+      for (const id of seedIds) if (id !== lovedMovie?.id) seen.add(id); // the loved movie itself may be shown
     }
     if (!seedIds.length) {
       const explicit = asList(a.genres).length > 0 || a.who === "kids";
@@ -951,7 +965,7 @@ async function search(
       plan = enforce(plan, a);
       if (plan.keywords.length) kw = await keywordIds(plan.keywords);
     }
-    const startPage = a.novelty === "familiar" ? 1 : 1 + Math.floor(Math.random() * 3); // variety between searches
+    const startPage = 1 + Math.floor(Math.random() * 3); // variety between searches
     next = { pass: 0, page: startPage };
   }
 
@@ -970,7 +984,8 @@ async function search(
   // With fewer than a page available, the exploration budget lets it fetch up to maxBatches batches.
   let batches = 0;
   const signalsPromise = buildSignals(taste, seedIds); // runs while TMDB is being searched
-  const seedFresh = seedCandidates.filter((m) => !seen.has(m.id)); // recommended for the picks: always part of the first batch
+  const lead = lovedMovie && !seen.has(lovedMovie.id) ? [lovedMovie] : [];
+  const seedFresh = [...lead, ...seedCandidates.filter((m) => !seen.has(m.id))]; // the loved movie, then what is recommended for the picks: always part of the first batch
   for (const m of seedFresh) seen.add(m.id);
   while (pool.length < cfg.refillBelow && next && batches < (pool.length >= cfg.page ? 1 : cfg.maxBatches)) {
     const r = await collect(passes, next, seen, { target: cfg.batch, maxScan: resume ? 10 : MAX_PAGES, allowGeneric: false, accept, verify });
@@ -996,7 +1011,12 @@ async function search(
   const requested = [...ask.must, ...ask.any].map((id) => g.get(id)).filter((x): x is string => !!x);
   const gem = await applyGemini(ranked, { apiKey: userKey, a, signals, cfg, started, requested });
   rejected = [...rejected, ...gem.rejected].slice(-300);
-  const { page, rest } = selectPage(gem.ranked, cfg, ask);
+  // The loved movie (if the user typed one) is shown first on the first page, whatever its score.
+  const lovedRank = !resume && lovedMovie ? gem.ranked.find((r) => r.item.movie.id === lovedMovie!.id) : undefined;
+  const others = lovedRank ? gem.ranked.filter((r) => r !== lovedRank) : gem.ranked;
+  const picked = selectPage(others, cfg, ask);
+  const page = lovedRank ? [lovedRank, ...picked.page.slice(0, cfg.page - 1)] : picked.page;
+  const rest = lovedRank ? [...picked.page.slice(cfg.page - 1), ...picked.rest] : picked.rest;
   const buf = rest.slice(0, cfg.buffer).map((r) => r.item);
   const done = next === null;
   return {
@@ -1023,6 +1043,20 @@ export async function POST(request: Request) {
       const best =
         yt.find((x) => x.type === "Trailer" && x.official) ?? yt.find((x) => x.type === "Trailer") ?? yt.find((x) => x.type === "Teaser");
       return Response.json({ key: best?.key ?? null });
+    }
+    if (body.mode === "images") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id)) throw new Error("Invalid movie id");
+      const r = await tmdb<{ backdrops: { file_path: string; vote_average?: number; vote_count?: number }[] }>(
+        `/movie/${id}/images`,
+        { include_image_language: "en,null" }
+      );
+      // The best-rated backdrops first; the page shows at most five.
+      const images = [...r.backdrops]
+        .sort((x, y) => (y.vote_average ?? 0) - (x.vote_average ?? 0) || (y.vote_count ?? 0) - (x.vote_count ?? 0))
+        .slice(0, 5)
+        .map((x) => `${IMG}/w780${x.file_path}`);
+      return Response.json({ images });
     }
     if (body.mode === "movie") {
       const id = Number(body.id);

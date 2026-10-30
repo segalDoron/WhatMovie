@@ -1,0 +1,9 @@
+/* Desktop form heading: title and icon buttons in one flex row, 40px apart */
+@media (min-width: 768px) {
+  .form .page-head { display: flex; align-items: center; justify-content: space-between; gap: 40px; }
+  .form .page-head h1 { width: auto; padding: 0; margin: -10px 0 0; flex: 1 1 auto; min-width: 0; }
+  .form .page-head .icons { display: flex; align-items: center; gap: 8px; flex: none; }
+  .app .form .page-head .icons > button { position: static; transform: none; }
+  /* with the side drawer open, keep the icon row clear of the 380px drawer */
+  .app.drawer-open .form .page-head { margin-right: max(0px, calc(396px - max(0px, (100% - var(--col)) / 2) - 20px)); }
+}
