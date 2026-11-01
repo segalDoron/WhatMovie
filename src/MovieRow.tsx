@@ -29,7 +29,7 @@ export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex }
             {movie.year}
             {movie.rating && <span className="cert" aria-label={`Rated ${movie.rating}`}>{movie.rating}</span>}
           </p>
-          {showFav && !!movie.runtime && <p className="runtime">{formatRuntime(movie.runtime)}</p>}
+          {!!movie.runtime && <p className="runtime">{formatRuntime(movie.runtime)}</p>}
           <p className="score"><Star /> {movie.score.toFixed(1)}</p>
           {!!movie.providers?.length && (
             <p className="providers" aria-label={`Streaming on ${movie.providers.join(", ")}`}>

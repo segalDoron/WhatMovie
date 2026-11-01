@@ -674,7 +674,7 @@ function cleanCursor(c: unknown): Cursor | null {
     sid: typeof o.sid === "string" && /^[0-9a-f-]{36}$/i.test(o.sid) ? o.sid : randomUUID(), pg: clamp(num(o.pg), 0, 1000), bn: clamp(num(o.bn), 0, 1000) };
 }
 
-/* ---------- The user's taste: ids only. Favorites, likes and dislikes become ranking signals; all of them, plus watched, are excluded. ---------- */
+/* ---------- The user's taste: ids only. Favorites, likes and dislikes become ranking signals; favorites, likes and watched are excluded. ---------- */
 interface Taste { favorites: number[]; likes: number[]; dislikes: number[]; watched: number[] }
 function cleanTaste(t: unknown): Taste {
   const o = (t ?? {}) as Record<string, unknown>;
@@ -923,8 +923,8 @@ async function search(
   const pageNo = (resume?.cursor.pg ?? 0) + 1; // which page of this search is being built (1 = the first 20)
   const sid = resume?.cursor.sid ?? randomUUID();
   let bn = resume?.cursor.bn ?? 0; // batches fetched so far in this search
-  // Never offered again: what was shown, and what the user disliked, liked, favorited or watched.
-  const seen = new Set<number>([...(resume?.seen ?? []), ...taste.dislikes, ...taste.likes, ...taste.favorites, ...taste.watched]);
+  // Never offered again: what was shown, and what the user liked, favorited or watched.
+  const seen = new Set<number>([...(resume?.seen ?? []), ...taste.likes, ...taste.favorites, ...taste.watched]);
   let plan: Plan;
   let kw: number[];
   let next: { pass: number; page: number } | null;
@@ -1032,8 +1032,14 @@ export async function POST(request: Request) {
     if (body.mode === "cast") {
       const id = Number(body.id);
       if (!Number.isInteger(id)) throw new Error("Invalid movie id");
-      const c = await tmdb<{ cast: { name: string; character: string }[] }>(`/movie/${id}/credits`);
-      return Response.json({ cast: c.cast.slice(0, 10).map(({ name, character }) => ({ name, character })) });
+      const c = await tmdb<{ cast: { name: string; character: string; profile_path: string | null }[] }>(`/movie/${id}/credits`);
+      return Response.json({
+        cast: c.cast.slice(0, 10).map(({ name, character, profile_path }) => ({
+          name,
+          character,
+          photo: profile_path ? `${IMG}/w185${profile_path}` : null,
+        })),
+      });
     }
     if (body.mode === "trailer") {
       const id = Number(body.id);
@@ -1051,10 +1057,10 @@ export async function POST(request: Request) {
         `/movie/${id}/images`,
         { include_image_language: "en,null" }
       );
-      // The best-rated backdrops first; the page shows at most five.
+      // The best-rated backdrops first; the page shows at most ten.
       const images = [...r.backdrops]
         .sort((x, y) => (y.vote_average ?? 0) - (x.vote_average ?? 0) || (y.vote_count ?? 0) - (x.vote_count ?? 0))
-        .slice(0, 5)
+        .slice(0, 10)
         .map((x) => `${IMG}/w780${x.file_path}`);
       return Response.json({ images });
     }

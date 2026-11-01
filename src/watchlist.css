@@ -27,14 +27,20 @@
 
 /* Desktop: watched icon in the top bar, left of recent searches */
 .watched-top {
-  position: absolute; top: 12px; right: calc(max(0px, (100% - var(--col)) / 2) + 216px); z-index: 30;
+  position: absolute; top: 12px; right: calc(max(0px, (100% - var(--col)) / 2) + 120px); z-index: 30;
   width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface);
   display: grid; place-items: center; color: var(--accent);
   transition: right .35s cubic-bezier(.2, .8, .2, 1), background .2s, color .2s, border-color .2s;
 }
 .watched-top[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .watched-top .badge { top: -5px; right: -5px; }
-.app.drawer-open .watched-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 216px), 588px); }
+.app.drawer-open .watched-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 120px), 492px); }
+
+/* Desktop top bar, left to right: History, Favorites, Watched, Profile, Theme. */
+.app .viewport .hist-top { right: calc(max(0px, (100% - var(--col)) / 2) + 216px); }
+.app.drawer-open .viewport .hist-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 216px), 588px); }
+.app .viewport .fav-top { right: calc(max(0px, (100% - var(--col)) / 2) + 168px); }
+.app.drawer-open .viewport .fav-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 168px), 540px); }
 
 /* The details page's "next" button moves one step left to make room for the watched icon. */
 @media (min-width: 768px) {

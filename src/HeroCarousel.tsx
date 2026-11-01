@@ -3,7 +3,7 @@ import { Chevron, ChevronRight } from "./Icons";
 import "./hero-carousel.css";
 
 interface Props {
-  slides: string[]; // up to five image URLs; the first one is the main image
+  slides: string[]; // up to ten image URLs; the first one is the main image
   tabIndex?: number;
 }
 

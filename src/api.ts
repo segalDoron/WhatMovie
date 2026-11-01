@@ -1,7 +1,7 @@
 import type { Answers, Movie } from "./types";
 import { supabase } from "./supabase";
 
-/** The user's taste as movie ids only: favorites, likes and dislikes steer the ranking, and with watched they are never offered again. */
+/** The user's taste as movie ids only: favorites, likes and dislikes steer the ranking; favorites, likes and watched are never offered again. */
 export interface Taste { favorites: number[]; likes: number[]; dislikes: number[]; watched: number[] }
 export const NO_TASTE: Taste = { favorites: [], likes: [], dislikes: [], watched: [] };
 
@@ -37,7 +37,7 @@ export const fetchMovies = (answers: Answers, taste: Taste = NO_TASTE) => search
 export const fetchMore = (answers: Answers, cursor: Cursor, seen: number[], taste: Taste = NO_TASTE) =>
   search({ mode: "more", answers, cursor, seen, taste });
 
-export interface CastMember { name: string; character: string }
+export interface CastMember { name: string; character: string; photo: string | null }
 const castCache = new Map<number, CastMember[]>();
 
 export async function fetchCast(id: number): Promise<CastMember[]> {

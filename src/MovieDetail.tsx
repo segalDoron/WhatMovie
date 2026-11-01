@@ -5,6 +5,7 @@ import { fetchCast, fetchImages, fetchTrailer, type CastMember } from "./api";
 import { useUserData } from "./userData";
 import TrailerModal from "./TrailerModal";
 import HeroCarousel from "./HeroCarousel";
+import "./cast-photo.css";
 import "./watched.css";
 
 interface Props {
@@ -60,9 +61,9 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
   const liked = !!movie && votes.like.some((m) => m.id === movie.id);
   const disliked = !!movie && votes.dislike.some((m) => m.id === movie.id);
   const t = tabbable ? 0 : -1;
-  // The main image first, then the other backdrops from TMDB (at most five in total).
+  // The main image first, then the other backdrops from TMDB (at most ten in total).
   const slides = movie
-    ? [...new Set([movie.backdrop ?? movie.poster, ...images].filter((u): u is string => !!u))].slice(0, 5)
+    ? [...new Set([movie.backdrop ?? movie.poster, ...images].filter((u): u is string => !!u))].slice(0, 10)
     : [];
 
   return (
@@ -128,9 +129,16 @@ export default function MovieDetail({ movie, open, onBack, onStartOver, tabbable
           {cast && cast.length > 0 && (
             <ul className="cast">
               {cast.map((a) => (
-                <li key={a.name + a.character}>
-                  <strong>{a.name}</strong>
-                  {a.character && <span className="role">as {a.character}</span>}
+                <li key={a.name + a.character} className="cast-card">
+                  {a.photo ? (
+                    <img className="cast-photo" src={a.photo} alt="" loading="lazy" />
+                  ) : (
+                    <span className="cast-photo cast-photo--empty" aria-hidden="true">{a.name.charAt(0)}</span>
+                  )}
+                  <div className="cast-text">
+                    <strong>{a.name}</strong>
+                    {a.character && <span className="role">as {a.character}</span>}
+                  </div>
                 </li>
               ))}
             </ul>
