@@ -2,6 +2,7 @@ import type { Favorite } from "./userData";
 import MovieRow from "./MovieRow";
 import { Close, Eye } from "./Icons";
 import { WATCHED_GOAL, watchedProgress } from "./watchlist";
+import { useAnimatedList } from "./useAnimatedList";
 
 export interface WatchedContentProps {
   items: Favorite[];
@@ -14,6 +15,7 @@ export interface WatchedContentProps {
 /** Watched progress, then the watched movies. Shown in the mobile sheet and the desktop drawer. */
 export default function WatchedContent({ items, loading, error, onClose, onPick }: WatchedContentProps) {
   const pct = Math.round(watchedProgress(items.length) * 100);
+  const rows = useAnimatedList(items, (m) => m.id);
   return (
     <>
       <header className="sheet-head">
@@ -41,8 +43,8 @@ export default function WatchedContent({ items, loading, error, onClose, onPick 
           </div>
         ) : (
           <ul className="list">
-            {items.map((m) => (
-              <MovieRow key={m.id} movie={m} onOpen={() => onPick(m)} />
+            {rows.map((r) => (
+              <MovieRow key={r.key} movie={r.item} anim={r.anim} onOpen={() => onPick(r.item)} />
             ))}
           </ul>
         )}

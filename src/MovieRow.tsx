@@ -1,6 +1,8 @@
 import type { Favorite } from "./userData";
 import { Heart, Star } from "./Icons";
 import "./result-favorite.css";
+import "./list-motion.css";
+import type { RowAnim } from "./useAnimatedList";
 
 interface Props {
   movie: Favorite & { providers?: string[]; runtime?: number };
@@ -8,6 +10,7 @@ interface Props {
   onRemove?: () => void; // favorites list only: heart in the top right corner
   favorite?: boolean; // results list only: marks a favorite with a heart and shows its length
   tabIndex?: number;
+  anim?: RowAnim; // drawer lists: row is being added ("enter") or removed ("leave")
 }
 
 function formatRuntime(min: number): string {
@@ -16,10 +19,14 @@ function formatRuntime(min: number): string {
   return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ");
 }
 
-export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex }: Props) {
+export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex, anim }: Props) {
   const showFav = !onRemove && !!favorite;
+  const cls = [onRemove ? "has-remove" : showFav ? "is-favorite" : "", anim ? `row-anim row-${anim}` : ""].filter(Boolean).join(" ");
+  // A row that is leaving is gone for keyboard and screen readers right away.
+  const leaving: Record<string, string> = anim === "leave" ? { inert: "", "aria-hidden": "true" } : {};
   return (
-    <li className={onRemove ? "has-remove" : showFav ? "is-favorite" : undefined}>
+    <li className={cls || undefined} {...leaving}>
+      <div className="row-clip">
       <button className="item" onClick={onOpen} tabIndex={tabIndex}>
         {movie.poster ? <img src={movie.poster} alt="" loading="lazy" /> : <div className="noimg" />}
         <div className="meta">
@@ -49,6 +56,7 @@ export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex }
           <Heart filled />
         </span>
       )}
+      </div>
     </li>
   );
 }

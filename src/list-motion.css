@@ -1,0 +1,15 @@
+/* Drawer / sheet lists: a row grows in when added and collapses out when removed.
+   The clip is only applied while animating, so focus rings are not cut off the rest of the time. */
+li.row-anim { display: grid; grid-template-rows: 1fr; }
+li.row-anim > .row-clip { position: relative; min-height: 0; overflow: hidden; }
+li.row-enter { animation: row-in .3s cubic-bezier(.2, .8, .2, 1) both; }
+li.row-leave { animation: row-out .3s cubic-bezier(.2, .8, .2, 1) both; pointer-events: none; }
+/* margin-bottom -12px cancels the 12px list gap so the space closes together with the row */
+@keyframes row-in {
+  from { grid-template-rows: 0fr; margin-bottom: -12px; opacity: 0; }
+  to { grid-template-rows: 1fr; margin-bottom: 0; opacity: 1; }
+}
+@keyframes row-out {
+  from { grid-template-rows: 1fr; margin-bottom: 0; opacity: 1; }
+  to { grid-template-rows: 0fr; margin-bottom: -12px; opacity: 0; }
+}

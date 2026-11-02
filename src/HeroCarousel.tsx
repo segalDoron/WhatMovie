@@ -14,8 +14,15 @@ export default function HeroCarousel({ slides, tabIndex }: Props) {
   const cur = Math.min(index, count - 1);
 
   return (
-    <div className="hero-carousel">
-      <img className="hero" src={slides[cur]} alt="" />
+    <div className="hero-carousel" role="group" aria-roledescription="carousel" aria-label="Movie images">
+      <div className="hero-viewport">
+        <div className="hero-track" style={{ transform: `translateX(-${cur * 100}%)` }}>
+          {slides.map((src, n) => {
+            const near = n === cur || n === (cur + 1) % count || n === (cur - 1 + count) % count;
+            return <img key={src} className="hero" src={src} alt="" loading={near ? "eager" : "lazy"} decoding="async" />;
+          })}
+        </div>
+      </div>
       {count > 1 && (
         <>
           <button
