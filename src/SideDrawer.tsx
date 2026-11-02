@@ -15,7 +15,8 @@ export default function SideDrawer({ open, label, onClose, children }: Props) {
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
+    // preventScroll: the drawer is still off-screen while it slides in; a normal focus() would scroll the overflow:hidden app and move the main view.
+    ref.current?.focus({ preventScroll: true });
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -27,7 +28,7 @@ export default function SideDrawer({ open, label, onClose, children }: Props) {
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      if (opener && document.contains(opener)) opener.focus();
+      if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
     };
   }, [open]);
 
