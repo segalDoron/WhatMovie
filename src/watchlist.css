@@ -47,3 +47,6 @@
   .app .viewport .next-top { right: calc(max(0px, (100% - var(--col)) / 2) + 264px); }
 }
 .app.drawer-open .viewport .next-top { right: max(calc(max(0px, (100% - var(--col)) / 2) + 264px), 636px); }
+
+/* Drawer as a dialog: it takes focus when opened, so the focus ring is not drawn on the container. */
+.drawer:focus { outline: none; }
