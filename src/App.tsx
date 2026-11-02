@@ -495,7 +495,7 @@ export default function App() {
       </div>
 
       {isDesktop ? (
-        <SideDrawer open={panel !== null} label={panelLabel}>{panelBody}</SideDrawer>
+        <SideDrawer open={panel !== null} label={panelLabel} onClose={closePanel}>{panelBody}</SideDrawer>
       ) : (
         <BottomSheet open={panel !== null} label={panelLabel}>{panelBody}</BottomSheet>
       )}
