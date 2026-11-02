@@ -96,6 +96,7 @@ export async function userContext(request: Request): Promise<{ userId: string | 
     }
     // The user's choice about sharing anonymous usage data. No saved choice = the default (METRICS_DEFAULT=off turns it off).
     // If the choice cannot be read, nothing is collected.
+    if (pref.error) console.error("metrics: could not read user_preferences (run supabase/0005_metrics.sql?):", pref.error.message); // so nothing is collected
     const shareUsage = pref.error ? false : pref.data ? pref.data.share_usage === true : process.env.METRICS_DEFAULT !== "off";
     return { userId: auth.user.id, geminiKey, shareUsage };
   } catch {
