@@ -24,7 +24,7 @@ export default function HistoryContent({ items, onClose, onPick, onRemove }: Pro
         {items.length === 0 ? (
           <div className="empty-state">
             <Clock size={56} />
-            <p>No searches yet. Your last 5 searches will show up here.</p>
+            <p>No searches yet. Your last 10 searches will show up here.</p>
           </div>
         ) : (
           <ul className="list">

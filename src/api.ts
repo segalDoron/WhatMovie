@@ -1,7 +1,7 @@
 import type { Answers, Movie } from "./types";
 import { supabase } from "./supabase";
 
-/** The user's taste as movie ids only: favorites, likes and dislikes steer the ranking, and with watched they are never offered again. */
+/** The user's taste as movie ids only: favorites, likes and dislikes steer the ranking; favorites, likes and watched are never offered again. */
 export interface Taste { favorites: number[]; likes: number[]; dislikes: number[]; watched: number[] }
 export const NO_TASTE: Taste = { favorites: [], likes: [], dislikes: [], watched: [] };
 
@@ -37,7 +37,7 @@ export const fetchMovies = (answers: Answers, taste: Taste = NO_TASTE) => search
 export const fetchMore = (answers: Answers, cursor: Cursor, seen: number[], taste: Taste = NO_TASTE) =>
   search({ mode: "more", answers, cursor, seen, taste });
 
-export interface CastMember { name: string; character: string }
+export interface CastMember { name: string; character: string; photo: string | null }
 const castCache = new Map<number, CastMember[]>();
 
 export async function fetchCast(id: number): Promise<CastMember[]> {
@@ -75,6 +75,23 @@ export async function fetchMovie(id: number): Promise<MovieDetails> {
 const trailerCache = new Map<number, string | null>();
 
 /** YouTube key of the best trailer for a movie, or null when none exists. */
+const imagesCache = new Map<number, string[]>();
+/** Up to five backdrop images for the details page carousel. */
+export async function fetchImages(id: number): Promise<string[]> {
+  const hit = imagesCache.get(id);
+  if (hit) return hit;
+  const res = await fetch("/api/movies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "images", id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Could not load images");
+  const images: string[] = Array.isArray(data.images) ? data.images : [];
+  imagesCache.set(id, images);
+  return images;
+}
+
 export async function fetchTrailer(id: number): Promise<string | null> {
   if (trailerCache.has(id)) return trailerCache.get(id)!;
   const res = await fetch("/api/movies", {

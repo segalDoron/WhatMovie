@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { CORE, MORE, type Question } from "./options";
 import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
-import YearRange, { MIN_YEAR, MAX_YEAR } from "./YearRange";
+import YearRange, { DEFAULT_FROM_YEAR, MIN_YEAR, MAX_YEAR } from "./YearRange";
 import ThisOrThat, { type Side } from "./ThisOrThat";
 import type { Answers } from "./types";
 
@@ -11,7 +11,7 @@ interface Props {
 
 export default function QuestionForm({ onSubmit }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
-  const [years, setYears] = useState<[number, number]>([MIN_YEAR, MAX_YEAR]);
+  const [years, setYears] = useState<[number, number]>([DEFAULT_FROM_YEAR, MAX_YEAR]);
   const [picks, setPicks] = useState<Record<string, Side>>({});
   const [showMore, setShowMore] = useState(false);
 
@@ -35,6 +35,13 @@ export default function QuestionForm({ onSubmit }: Props) {
 
   const setText1 = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setAnswers((a) => ({ ...a, [key]: e.target.value }));
+
+  const yearsField = (
+    <fieldset className="q">
+      <legend>Release years</legend>
+      <YearRange value={years} onChange={setYears} />
+    </fieldset>
+  );
 
   const renderQ = (q: Question) => (
     <fieldset key={q.key} className="q">
@@ -72,7 +79,12 @@ export default function QuestionForm({ onSubmit }: Props) {
     >
       <h1>What are we watching tonight?</h1>
 
-      {CORE.map(renderQ)}
+      {CORE.map((q) => (
+        <Fragment key={q.key}>
+          {q.key === "ratings" && yearsField}
+          {renderQ(q)}
+        </Fragment>
+      ))}
 
       <button type="button" className="link" onClick={() => setShowMore((s) => !s)} aria-expanded={showMore}>
         {showMore ? "Fewer options" : "More options"}
@@ -82,11 +94,6 @@ export default function QuestionForm({ onSubmit }: Props) {
         <div className="more-inner">
           <div className="more">
             {MORE.map(renderQ)}
-
-            <fieldset className="q">
-              <legend>Release years</legend>
-              <YearRange value={years} onChange={setYears} />
-            </fieldset>
 
             <fieldset className="q">
               <legend>Actor name</legend>
