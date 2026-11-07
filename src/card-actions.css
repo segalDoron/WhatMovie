@@ -1,37 +1,38 @@
-/* Movie card actions: four buttons inside the card's corners, same on mobile and desktop.
-   Favorite top-right, Like top-left, Watched bottom-left, Dislike bottom-right.
-   Drawer lists show only the active ones, nudged up 12px and right 4px. */
-
-.row-clip { position: relative; }
-
-/* Keep the card text clear of the right-hand corner buttons */
-.row-clip > .item .meta { padding-right: 40px; }
-
-/* Wrapper covers the card; only the buttons take pointer events */
-.card-actions { position: absolute; inset: 0; pointer-events: none; }
-
+/* ---------- Movie card: like / dislike / favorite / watched toggles under the card's text ---------- */
+.card-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 12px 12px; }
 .card-act {
-  position: absolute; pointer-events: auto;
-  width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface);
-  color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0;
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); display: grid; place-items: center; cursor: pointer;
   transition: background .15s, border-color .15s, color .15s, transform .1s;
 }
-.card-act svg { width: 16px; height: 16px; }
+.card-act svg { width: 18px; height: 18px; }
 .card-act:hover { border-color: var(--primary); }
 .card-act:active { transform: scale(.92); }
 .card-act:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
-
-/* Corners */
-.card-act.heart { top: 8px; right: 8px; }
-.card-act.like { top: 8px; left: 8px; }
-.card-act.watched { bottom: 8px; left: 8px; }
-.card-act.dislike { bottom: 8px; right: 8px; }
-
-/* Active states */
 .card-act.like[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .card-act.dislike[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .card-act.heart[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .card-act.watched[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: var(--on-primary); }
 
-/* Drawer lists: only the active buttons, nudged up 12px and right 4px */
-.card-actions.active-only .card-act { translate: 4px -12px; }
+/* ---------- Layout ---------- */
+/* Mobile: 2x2 grid */
+.card-actions { display: grid; grid-template-columns: repeat(2, 36px); justify-content: end; gap: 6px; }
+
+/* Desktop: all four buttons in a horizontal row in the card's top-right corner */
+@media (min-width: 768px) {
+  .row-clip { position: relative; }
+  .card-actions:not(.active-only) {
+    position: absolute; top: 10px; right: 10px; z-index: 1; padding: 0;
+    display: flex; gap: 6px;
+  }
+  .card-actions:not(.active-only) .card-act { width: 30px; height: 30px; }
+  .card-actions:not(.active-only) .card-act svg { width: 16px; height: 16px; }
+  /* keep the title clear of the buttons */
+  .row-clip:has(.card-actions:not(.active-only)) > .item { padding-right: 150px; }
+}
+
+/* Drawer lists: only the active statuses, nudged up and right */
+.card-actions.active-only { position: relative; top: -12px; right: -4px; padding: 0 12px 0; }
+@media (min-width: 768px) {
+  .card-actions.active-only { display: flex; justify-content: flex-start; }
+}
