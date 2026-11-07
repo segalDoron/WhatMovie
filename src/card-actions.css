@@ -1,11 +1,15 @@
-/* ---------- Movie card: like / dislike / favorite / watched toggles under the card's text ---------- */
-.card-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 12px 12px; }
+/* ---------- Movie card: like / dislike / favorite / watched ---------- */
+/* Order everywhere: Like, Favorite, Dislike, Watched. */
+
+.row-clip { position: relative; }
+
+.card-actions { display: flex; gap: 6px; padding: 0; }
 .card-act {
-  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface);
-  color: var(--ink); display: grid; place-items: center; cursor: pointer;
+  width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0;
   transition: background .15s, border-color .15s, color .15s, transform .1s;
 }
-.card-act svg { width: 18px; height: 18px; }
+.card-act svg { width: 16px; height: 16px; }
 .card-act:hover { border-color: var(--primary); }
 .card-act:active { transform: scale(.92); }
 .card-act:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
@@ -14,25 +18,18 @@
 .card-act.heart[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .card-act.watched[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: var(--on-primary); }
 
-/* ---------- Layout ---------- */
-/* Mobile: 2x2 grid */
-.card-actions { display: grid; grid-template-columns: repeat(2, 36px); justify-content: end; gap: 6px; }
-
-/* Desktop: all four buttons in a horizontal row in the card's top-right corner */
+/* Results card, all widths: the four buttons together in the top-right corner.
+   Mobile: 2x2 grid (Like | Favorite / Dislike | Watched). Desktop: one row. */
+.card-actions:not(.active-only) {
+  position: absolute; top: 10px; right: 10px; z-index: 1;
+  display: grid; grid-template-columns: repeat(2, 30px); gap: 6px;
+}
+.row-clip:has(.card-actions:not(.active-only)) > .item { padding-right: 78px; }
 @media (min-width: 768px) {
-  .row-clip { position: relative; }
-  .card-actions:not(.active-only) {
-    position: absolute; top: 10px; right: 10px; z-index: 1; padding: 0;
-    display: flex; gap: 6px;
-  }
-  .card-actions:not(.active-only) .card-act { width: 30px; height: 30px; }
-  .card-actions:not(.active-only) .card-act svg { width: 16px; height: 16px; }
-  /* keep the title clear of the buttons */
+  .card-actions:not(.active-only) { display: flex; }
   .row-clip:has(.card-actions:not(.active-only)) > .item { padding-right: 150px; }
 }
 
-/* Drawer lists: only the active statuses, nudged up and right */
-.card-actions.active-only { position: relative; top: -12px; right: -4px; padding: 0 12px 0; }
-@media (min-width: 768px) {
-  .card-actions.active-only { display: flex; justify-content: flex-start; }
-}
+/* Drawer lists (mobile and desktop alike): only the active statuses, in one row,
+   nudged up 12px and right 4px. */
+.card-actions.active-only { position: relative; top: -12px; right: -4px; display: flex; justify-content: flex-start; padding: 0 12px; }
