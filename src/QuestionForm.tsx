@@ -105,10 +105,12 @@ export default function QuestionForm({ onSubmit }: Props) {
               <input className="text" type="text" value={(answers.loved as string) ?? ""} onChange={setText1("loved")} placeholder="We'll find similar ones" />
             </fieldset>
 
+            {/* This or that? Tick one side per row (hidden for now)
             <fieldset className="q">
               <legend>This or that? Tick one side per row</legend>
               <ThisOrThat picks={picks} onPick={pickSide} />
             </fieldset>
+            */}
           </div>
         </div>
       </div>
