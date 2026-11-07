@@ -44,7 +44,7 @@ export default function WatchedContent({ items, loading, error, onClose, onPick 
         ) : (
           <ul className="list">
             {rows.map((r) => (
-              <MovieRow key={r.key} movie={r.item} anim={r.anim} onOpen={() => onPick(r.item)} />
+              <MovieRow key={r.key} movie={r.item} anim={r.anim} actionsActiveOnly onOpen={() => onPick(r.item)} />
             ))}
           </ul>
         )}

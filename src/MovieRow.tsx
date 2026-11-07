@@ -9,6 +9,7 @@ interface Props {
   movie: Favorite & { providers?: string[]; runtime?: number };
   onOpen: () => void;
   tabIndex?: number;
+  actionsActiveOnly?: boolean; // drawer lists: only the active statuses
   anim?: RowAnim; // drawer lists: row is being added ("enter") or removed ("leave")
 }
 
@@ -18,7 +19,7 @@ function formatRuntime(min: number): string {
   return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ");
 }
 
-export default function MovieRow({ movie, onOpen, tabIndex, anim }: Props) {
+export default function MovieRow({ movie, onOpen, tabIndex, anim, actionsActiveOnly }: Props) {
   const cls = anim ? `row-anim row-${anim}` : "";
   // A row that is leaving is gone for keyboard and screen readers right away.
   const leaving: Record<string, string> = anim === "leave" ? { inert: "", "aria-hidden": "true" } : {};
@@ -44,7 +45,7 @@ export default function MovieRow({ movie, onOpen, tabIndex, anim }: Props) {
           )}
         </div>
       </button>
-        <MovieCardActions movie={movie} tabIndex={tabIndex} />
+        <MovieCardActions movie={movie} tabIndex={tabIndex} activeOnly={actionsActiveOnly} />
       </div>
     </li>
   );

@@ -13,3 +13,26 @@
 .card-act.dislike[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .card-act.heart[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .card-act.watched[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: var(--on-primary); }
+
+/* ---------- Layout ---------- */
+/* Mobile: 2x2 grid */
+.card-actions { display: grid; grid-template-columns: repeat(2, 36px); justify-content: end; gap: 6px; }
+
+/* Desktop: all four buttons in a horizontal row in the card's top-right corner */
+@media (min-width: 768px) {
+  .row-clip { position: relative; }
+  .card-actions:not(.active-only) {
+    position: absolute; top: 10px; right: 10px; z-index: 1; padding: 0;
+    display: flex; gap: 6px;
+  }
+  .card-actions:not(.active-only) .card-act { width: 30px; height: 30px; }
+  .card-actions:not(.active-only) .card-act svg { width: 16px; height: 16px; }
+  /* keep the title clear of the buttons */
+  .row-clip:has(.card-actions:not(.active-only)) > .item { padding-right: 150px; }
+}
+
+/* Drawer lists: only the active statuses, nudged up and right */
+.card-actions.active-only { position: relative; top: -12px; right: -4px; padding: 0 12px 0; }
+@media (min-width: 768px) {
+  .card-actions.active-only { display: flex; justify-content: flex-start; }
+}

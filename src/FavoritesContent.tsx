@@ -34,7 +34,7 @@ export default function FavoritesContent({ items, loading, error, onClose, onPic
         ) : (
           <ul className="list">
             {rows.map((r) => (
-              <MovieRow key={r.key} movie={r.item} anim={r.anim} onOpen={() => onPick(r.item)} />
+              <MovieRow key={r.key} movie={r.item} anim={r.anim} actionsActiveOnly onOpen={() => onPick(r.item)} />
             ))}
           </ul>
         )}
