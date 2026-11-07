@@ -4,6 +4,7 @@ import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
 import YearRange, { DEFAULT_FROM_YEAR, MIN_YEAR, MAX_YEAR } from "./YearRange";
 import ThisOrThat, { type Side } from "./ThisOrThat";
 import type { Answers } from "./types";
+import "./form-heading.css";
 
 interface Props {
   onSubmit: (answers: Answers) => void;
