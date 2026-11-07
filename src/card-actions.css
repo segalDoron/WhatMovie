@@ -1,0 +1,15 @@
+/* Movie card: like / dislike / favorite / watched toggles under the card's text */
+.card-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 12px 12px; }
+.card-act {
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); display: grid; place-items: center; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, transform .1s;
+}
+.card-act svg { width: 18px; height: 18px; }
+.card-act:hover { border-color: var(--primary); }
+.card-act:active { transform: scale(.92); }
+.card-act:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.card-act.like[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.card-act.dislike[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.card-act.heart[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.card-act.watched[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: var(--on-primary); }

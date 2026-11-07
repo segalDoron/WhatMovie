@@ -4,7 +4,6 @@ import type { Movie } from "./types";
 import { Chevron, Sort } from "./Icons";
 import MovieRow from "./MovieRow";
 import Reel from "./Reel";
-import { useUserData } from "./userData";
 import "./sort-dock.css";
 
 /** The nearest ancestor that scrolls vertically (or the window). */
@@ -31,7 +30,6 @@ interface Props {
 
 export default function ResultsList({ movies, onOpen, onStartOver, tabbable, hasMore, loadingMore, moreMessage, onMore, sorted, onToggleSort }: Props) {
   const t = tabbable ? 0 : -1;
-  const { isFavorite } = useUserData();
 
   // The sort button sits under the list and, once scrolled up to the header, docks into the header
   // beside "Start over". One element is moved, so keyboard focus and state are kept; the move is animated.
@@ -118,7 +116,7 @@ export default function ResultsList({ movies, onOpen, onStartOver, tabbable, has
       ) : (
         <ul className="list">
           {movies.map((m) => (
-            <MovieRow key={m.id} movie={m} onOpen={() => onOpen(m)} favorite={isFavorite(m.id)} tabIndex={t} />
+            <MovieRow key={m.id} movie={m} onOpen={() => onOpen(m)} tabIndex={t} />
           ))}
         </ul>
       )}

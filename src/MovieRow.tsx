@@ -1,5 +1,6 @@
 import type { Favorite } from "./userData";
-import { Heart, Star } from "./Icons";
+import { Star } from "./Icons";
+import MovieCardActions from "./MovieCardActions";
 import "./result-favorite.css";
 import "./list-motion.css";
 import type { RowAnim } from "./useAnimatedList";
@@ -7,8 +8,6 @@ import type { RowAnim } from "./useAnimatedList";
 interface Props {
   movie: Favorite & { providers?: string[]; runtime?: number };
   onOpen: () => void;
-  onRemove?: () => void; // favorites list only: heart in the top right corner
-  favorite?: boolean; // results list only: marks a favorite with a heart and shows its length
   tabIndex?: number;
   anim?: RowAnim; // drawer lists: row is being added ("enter") or removed ("leave")
 }
@@ -19,9 +18,8 @@ function formatRuntime(min: number): string {
   return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ");
 }
 
-export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex, anim }: Props) {
-  const showFav = !onRemove && !!favorite;
-  const cls = [onRemove ? "has-remove" : showFav ? "is-favorite" : "", anim ? `row-anim row-${anim}` : ""].filter(Boolean).join(" ");
+export default function MovieRow({ movie, onOpen, tabIndex, anim }: Props) {
+  const cls = anim ? `row-anim row-${anim}` : "";
   // A row that is leaving is gone for keyboard and screen readers right away.
   const leaving: Record<string, string> = anim === "leave" ? { inert: "", "aria-hidden": "true" } : {};
   return (
@@ -46,16 +44,7 @@ export default function MovieRow({ movie, onOpen, onRemove, favorite, tabIndex, 
           )}
         </div>
       </button>
-      {onRemove && (
-        <button className="remove" onClick={onRemove} aria-label={`Remove ${movie.title} from favorites`} tabIndex={tabIndex}>
-          <Heart filled />
-        </button>
-      )}
-      {showFav && (
-        <span className="fav-mark" role="img" aria-label="Favorite">
-          <Heart filled />
-        </span>
-      )}
+        <MovieCardActions movie={movie} tabIndex={tabIndex} />
       </div>
     </li>
   );
