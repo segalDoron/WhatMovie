@@ -1,0 +1,35 @@
+import type { Favorite } from "./userData";
+import { useUserData } from "./userData";
+import { Eye, Heart, ThumbDown, ThumbUp } from "./Icons";
+import "./card-actions.css";
+
+interface Props {
+  movie: Favorite;
+  tabIndex?: number;
+}
+
+/** Like, dislike, favorite and watched toggles shown on a movie card. Each click toggles that status. */
+export default function MovieCardActions({ movie, tabIndex }: Props) {
+  const { votes, isFavorite, isWatched, vote, toggleFavorite, toggleWatched } = useUserData();
+  const liked = votes.like.some((m) => m.id === movie.id);
+  const disliked = votes.dislike.some((m) => m.id === movie.id);
+  const fav = isFavorite(movie.id);
+  const watched = isWatched(movie.id);
+
+  return (
+    <div className="card-actions" role="group" aria-label={`Your status for ${movie.title}`}>
+      <button type="button" className="card-act like" aria-pressed={liked} aria-label={`Like ${movie.title}`} tabIndex={tabIndex} onClick={() => vote("like", movie)}>
+        <ThumbUp filled={liked} />
+      </button>
+      <button type="button" className="card-act dislike" aria-pressed={disliked} aria-label={`Dislike ${movie.title}`} tabIndex={tabIndex} onClick={() => vote("dislike", movie)}>
+        <ThumbDown filled={disliked} />
+      </button>
+      <button type="button" className="card-act heart" aria-pressed={fav} aria-label={`${fav ? "Remove" : "Add"} ${movie.title} ${fav ? "from" : "to"} favorites`} tabIndex={tabIndex} onClick={() => toggleFavorite(movie)}>
+        <Heart filled={fav} />
+      </button>
+      <button type="button" className="card-act watched" aria-pressed={watched} aria-label={`Mark ${movie.title} ${watched ? "unwatched" : "watched"}`} tabIndex={tabIndex} onClick={() => toggleWatched(movie)}>
+        <Eye />
+      </button>
+    </div>
+  );
+}
