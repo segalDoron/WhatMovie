@@ -120,6 +120,13 @@ export default function App() {
 
   const [view, setView] = useState<View>("form");
   const [movies, setMovies] = useState<Movie[]>([]);
+  // A batch of new movies: the ones disliked at the moment the batch is added go to the back of that batch, keeping their order.
+  const isDislikedRef = useRef(isDisliked);
+  isDislikedRef.current = isDisliked;
+  const batchLast = (batch: Movie[]) => [
+    ...batch.filter((m) => !isDislikedRef.current(m.id)),
+    ...batch.filter((m) => isDislikedRef.current(m.id)),
+  ];
   const [sortByRating, setSortByRating] = useState(false); // list order: best match first, or highest rating first
   const [cursor, setCursor] = useState<Cursor | null>(null); // where "show more" continues; null = nothing more to load
   const [loadingMore, setLoadingMore] = useState(false);
@@ -215,7 +222,7 @@ export default function App() {
       if (id !== requestId.current) return; // user went back while loading
       answersRef.current = answers;
       moreToken.current++;
-      setMovies(result.movies);
+      setMovies(batchLast(result.movies));
       setSortByRating(false);
       setCursor(result.cursor);
       setLoadingMore(false);
@@ -251,7 +258,7 @@ export default function App() {
       if (token !== moreToken.current) return;
       const have = new Set(movies.map((m) => m.id));
       const fresh = r.movies.filter((m) => !have.has(m.id));
-      setMovies((prev) => [...prev, ...fresh]);
+      setMovies((prev) => [...prev, ...batchLast(fresh)]);
       setCursor(r.cursor);
       if (!fresh.length && !r.cursor) setMoreMessage("That's everything we found.");
     } catch {
@@ -279,9 +286,8 @@ export default function App() {
   // The movie after the current one in the list it was opened from.
   const sourceOf = (m: Movie): Source => detailSource.current.get(m.id) ?? "results";
   // What the list shows, in order. "Next movie" follows the same order.
-  // Disliked movies go to the end of the list (the sort choice still applies inside each group).
-  const orderedMovies = sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies;
-  const shownMovies = [...orderedMovies.filter((m) => !isDisliked(m.id)), ...orderedMovies.filter((m) => isDisliked(m.id))];
+  // Disliked movies are moved to the end of each batch when the batch is added (see batchLast), not when they are disliked.
+  const shownMovies = sortByRating ? [...movies].sort((a, b) => b.score - a.score) : movies;
   const listOf = (src: Source): { id: number }[] => (src === "favorites" ? favorites : src === "watched" ? watched : shownMovies);
   const nextId = (() => {
     if (!selected) return null;
