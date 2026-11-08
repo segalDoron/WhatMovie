@@ -1,0 +1,5 @@
+/* Cast list: actor photo beside name and role */
+.cast li.cast-card { flex-direction: row; align-items: center; gap: 12px; }
+.cast-photo { width: 48px; height: 48px; flex: none; border-radius: 50%; object-fit: cover; background: var(--line); }
+.cast-photo--empty { display: grid; place-items: center; font-weight: 700; color: var(--muted); }
+.cast-text { display: flex; flex-direction: column; min-width: 0; }

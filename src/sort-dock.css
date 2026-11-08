@@ -1,4 +1,4 @@
 /* Sort button: sits under the list, docks into the sticky header beside "Start over" when scrolled up to it */
 .list-tools { min-height: 44px; align-items: center; } /* keeps the list from jumping when the button leaves */
-.bar .sort-slot { margin-left: auto; display: flex; align-items: center; min-width: 0; }
+.bar .sort-slot { display: flex; align-items: center; min-width: 0; }
 .sort.docked { padding: 6px 12px; font-size: .85rem; }

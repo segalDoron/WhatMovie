@@ -1,5 +1,6 @@
 export const MIN_YEAR = 1970;
 export const MAX_YEAR = new Date().getFullYear();
+export const DEFAULT_FROM_YEAR = 2000; // the release-years filter starts here
 
 const DECADES: [string, number, number][] = [
   ["70s", 1970, 1979], ["80s", 1980, 1989], ["90s", 1990, 1999],

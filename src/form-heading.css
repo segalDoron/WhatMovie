@@ -1,0 +1,4 @@
+/* Start page heading: 75% of the column on desktop */
+@media (min-width: 768px) {
+  .app .form h1 { width: 75%; }
+}

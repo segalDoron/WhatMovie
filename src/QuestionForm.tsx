@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { CORE, MORE, type Question } from "./options";
 import { MOVIE_PAIRS, TASTE_PAIRS } from "./pairs";
-import YearRange, { MIN_YEAR, MAX_YEAR } from "./YearRange";
+import YearRange, { DEFAULT_FROM_YEAR, MIN_YEAR, MAX_YEAR } from "./YearRange";
 import ThisOrThat, { type Side } from "./ThisOrThat";
 import type { Answers } from "./types";
+import "./form-heading.css";
 
 interface Props {
   onSubmit: (answers: Answers) => void;
@@ -11,7 +12,7 @@ interface Props {
 
 export default function QuestionForm({ onSubmit }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
-  const [years, setYears] = useState<[number, number]>([MIN_YEAR, MAX_YEAR]);
+  const [years, setYears] = useState<[number, number]>([DEFAULT_FROM_YEAR, MAX_YEAR]);
   const [picks, setPicks] = useState<Record<string, Side>>({});
   const [showMore, setShowMore] = useState(false);
 
@@ -35,6 +36,13 @@ export default function QuestionForm({ onSubmit }: Props) {
 
   const setText1 = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setAnswers((a) => ({ ...a, [key]: e.target.value }));
+
+  const yearsField = (
+    <fieldset className="q">
+      <legend>Release years</legend>
+      <YearRange value={years} onChange={setYears} />
+    </fieldset>
+  );
 
   const renderQ = (q: Question) => (
     <fieldset key={q.key} className="q">
@@ -72,7 +80,12 @@ export default function QuestionForm({ onSubmit }: Props) {
     >
       <h1>What are we watching tonight?</h1>
 
-      {CORE.map(renderQ)}
+      {CORE.map((q) => (
+        <Fragment key={q.key}>
+          {q.key === "ratings" && yearsField}
+          {renderQ(q)}
+        </Fragment>
+      ))}
 
       <button type="button" className="link" onClick={() => setShowMore((s) => !s)} aria-expanded={showMore}>
         {showMore ? "Fewer options" : "More options"}
@@ -84,11 +97,6 @@ export default function QuestionForm({ onSubmit }: Props) {
             {MORE.map(renderQ)}
 
             <fieldset className="q">
-              <legend>Release years</legend>
-              <YearRange value={years} onChange={setYears} />
-            </fieldset>
-
-            <fieldset className="q">
               <legend>Actor name</legend>
               <input className="text" type="text" value={(answers.actor as string) ?? ""} onChange={setText1("actor")} placeholder="e.g. Tom Hanks" />
             </fieldset>
@@ -98,10 +106,12 @@ export default function QuestionForm({ onSubmit }: Props) {
               <input className="text" type="text" value={(answers.loved as string) ?? ""} onChange={setText1("loved")} placeholder="We'll find similar ones" />
             </fieldset>
 
+            {/* This or that? Tick one side per row (hidden for now)
             <fieldset className="q">
               <legend>This or that? Tick one side per row</legend>
               <ThisOrThat picks={picks} onPick={pickSide} />
             </fieldset>
+            */}
           </div>
         </div>
       </div>
